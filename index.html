@@ -52,13 +52,20 @@
         
         #map { 
             height: calc(100vh - 350px); width: 100%; background: #222; 
-            transition: box-shadow 0.5s ease-in-out;
+            transition: all 0.2s ease-in-out;
+            box-sizing: border-box;
         }
 
-        /* EFFET DEGRADE ROUGE SUR LE TOUR DE LA CARTE */
         .proximity-alert {
-            box-shadow: inset 0 0 30px 10px rgba(255, 0, 0, 0.8), 0 0 20px 5px rgba(255, 0, 0, 0.6) !important;
+            box-shadow: inset 0 0 50px 20px #ff0000 !important;
+            border: 10px solid #ff0000 !important;
+            animation: flash-border 0.4s infinite alternate;
             z-index: 1001;
+        }
+
+        @keyframes flash-border {
+            from { border-color: #ff0000; box-shadow: inset 0 0 50px 20px #ff0000; }
+            to { border-color: #ffffff; box-shadow: inset 0 0 80px 30px #ff0000; }
         }
     </style>
 </head>
@@ -181,11 +188,11 @@
 
             if (myPos) {
                 const dist = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
-                if (dist < 50) collisionAlert = true;
+                // REGLAGE SUR 500 METRES ICI
+                if (dist < 500) collisionAlert = true;
             }
         }
 
-        // --- GESTION VISUELLE ---
         if (unitInAction) {
             banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
             banner.className = "notification-banner alert-active";
@@ -198,10 +205,9 @@
             banner.className = "notification-banner";
         }
 
-        // Halo rouge dégradé sur le tour de la carte si collision proche
         if (collisionAlert) {
             mapDiv.classList.add('proximity-alert');
-            if (navigator.vibrate) navigator.vibrate(500);
+            if (navigator.vibrate) navigator.vibrate([500, 100, 500]);
         } else {
             mapDiv.classList.remove('proximity-alert');
         }
