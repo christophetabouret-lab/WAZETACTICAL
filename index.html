@@ -3,16 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>PROJET TCHAT</title>
+    <title>TACTICAL DEPLOY</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
         
+        /* LE TITRE CORRIGÉ : TACTICAL DEPLOY */
         #main-title {
             width: 80%; margin: 10px auto; text-align: center;
             padding: 12px; border: 2px solid #e74c3c; color: #e74c3c;
             font-weight: bold; background: #2c2c2c; border-radius: 8px;
-            text-transform: uppercase; letter-spacing: 1px;
+            text-transform: uppercase; letter-spacing: 2px;
         }
 
         #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
@@ -45,16 +46,8 @@
         #btn-test { background: #9b59b6; height: 35px; font-size: 0.65rem; }
         #btn-sat { background: #2c3e50; height: 35px; font-size: 0.65rem; border: 1px solid #7f8c8d; }
 
-        input { 
-            width: 100%; padding: 12px; background: #444; border: 1px solid #666; 
-            color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; 
-        }
-        
-        #map { 
-            height: calc(100vh - 350px); width: 100%; background: #222; 
-            transition: all 0.2s ease-in-out;
-            box-sizing: border-box;
-        }
+        input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; }
+        #map { height: calc(100vh - 350px); width: 100%; background: #222; transition: all 0.2s ease-in-out; box-sizing: border-box; }
 
         .proximity-alert {
             box-shadow: inset 0 0 50px 20px #ff0000 !important;
@@ -62,7 +55,6 @@
             animation: flash-border 0.4s infinite alternate;
             z-index: 1001;
         }
-
         @keyframes flash-border {
             from { border-color: #ff0000; box-shadow: inset 0 0 50px 20px #ff0000; }
             to { border-color: #ffffff; box-shadow: inset 0 0 80px 30px #ff0000; }
@@ -71,7 +63,7 @@
 </head>
 <body>
 
-<div id="main-title">PROJET TCHAT</div>
+<div id="main-title">TACTICAL DEPLOY</div>
 
 <div id="ui-panel">
     <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
@@ -188,7 +180,6 @@
 
             if (myPos) {
                 const dist = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
-                // REGLAGE SUR 500 METRES ICI
                 if (dist < 500) collisionAlert = true;
             }
         }
@@ -219,7 +210,7 @@
         if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
         if (isVisible) sendUpdate();
         db.ref('vehicles/' + myName.replace(/[^a-zA-Z0-9]/g, "_")).onDisconnect().remove();
-    }, (err) => { alert("Erreur GPS : Autorisez la localisation."); }, { enableHighAccuracy: true });
+    }, null, { enableHighAccuracy: true });
 </script>
 </body>
 </html>
