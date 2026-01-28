@@ -59,7 +59,7 @@
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false;
-    let isLockedForMsg = false; // Verrou pour l'affichage du message
+    let isLockedForMsg = false;
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playBip() {
@@ -149,41 +149,47 @@
         const now = Date.now();
         let unitInAction = null;
 
-        // Gestion PRIORITAIRE du message bleu avec Verrouillage
+        // Gestion message bleu (SANS BIP)
         if (lastMsg.ts && lastMsg.from !== myName) {
             if (!window.lastShownTs || window.lastShownTs !== lastMsg.ts) {
                 window.lastShownTs = lastMsg.ts;
-                isLockedForMsg = true; // On bloque les autres affichages
-                playBip();
+                isLockedForMsg = true;
                 banner.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
                 banner.className = "alert-msg";
-                setTimeout(() => speak(lastMsg.from + " dit " + lastMsg.text), 300);
-                
+                setTimeout(() => speak(lastMsg.from + " dit " + lastMsg.text), 100);
                 setTimeout(() => { 
-                    isLockedForMsg = false; // On débloque
-                    banner.className = ""; // Nettoie le style
-                    db.ref().once('value', (s) => processDisplay(s.val()?.vehicles || {})); // Force le refresh
+                    isLockedForMsg = false; banner.className = "";
+                    db.ref().once('value', (s) => processDisplay(s.val()?.vehicles || {})); 
                 }, 7000);
             }
         }
 
-        // Nettoyage et mise à jour des marqueurs
-        for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
-        for (let id in data) {
-            const v = data[id];
-            if (now - v.ts > 30000) { if (markers[id]) { map.removeLayer(markers[id]); delete markers[id]; } continue; }
-            if (v.active) unitInAction = id.replace(/_/g, ' ');
-            if (id === myName.replace(/[^a-zA-Z0-9]/g, "_")) continue;
-            if (!markers[id]) { markers[id] = L.marker([v.lat, v.lon]).addTo(map); } 
-            else { markers[id].setLatLng([v.lat, v.lon]); }
+        // Nettoyage et affichage conditionnel des marqueurs
+        for (let id in markers) { map.removeLayer(markers[id]); delete markers[id]; }
+        
+        // On n'affiche les marqueurs que si "REJOINDRE" (isVisible) est activé
+        if (isVisible) {
+            for (let id in data) {
+                const v = data[id];
+                if (now - v.ts > 30000) continue;
+                if (v.active) unitInAction = id.replace(/_/g, ' ');
+                if (id === myName.replace(/[^a-zA-Z0-9]/g, "_")) continue;
+                markers[id] = L.marker([v.lat, v.lon]).addTo(map);
+            }
+        } else {
+            // Même si invisible, on détecte quand même si quelqu'un est en PEC pour le bandeau
+            for (let id in data) {
+                if (data[id].active && (now - data[id].ts < 30000)) unitInAction = id.replace(/_/g, ' ');
+            }
         }
 
         function processDisplay(currentData) {
-            if (isLockedForMsg) return; // Ne rien faire si un message bleu est affiché
-            
+            if (isLockedForMsg) return;
             let actionFound = false;
             for (let id in currentData) {
                 if (currentData[id].active && (now - currentData[id].ts < 30000)) {
+                    // BIP SEULEMENT SI ALERTE ACTIVE
+                    if (banner.className !== "alert-active") playBip(); 
                     banner.innerText = "🚨 ALERTE : " + id.replace(/_/g, ' ').toUpperCase();
                     banner.className = "alert-active";
                     actionFound = true; break;
@@ -191,7 +197,6 @@
             }
             if (!actionFound) { banner.innerText = "ZONE SÉCURISÉE"; banner.className = ""; }
         }
-
         processDisplay(data);
     });
 
@@ -201,17 +206,6 @@
         if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
         if (isVisible || isPEC) sendUpdate();
     }, null, { enableHighAccuracy: true });
-
-    setInterval(() => {
-        if (!isLockedForMsg) {
-            db.ref('vehicles').once('value', (s) => {
-                const d = s.val() || {};
-                let check = false;
-                for (let i in d) { if (d[i].active && (Date.now() - d[i].ts < 30000)) check = true; }
-                if (!check && banner.className === "alert-active") { banner.innerText = "ZONE SÉCURISÉE"; banner.className = ""; }
-            });
-        }
-    }, 4000);
 </script>
 </body>
 </html>
