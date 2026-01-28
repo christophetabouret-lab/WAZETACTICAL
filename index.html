@@ -28,38 +28,34 @@
             color: #ffffff !important;
             animation: pulse-red 0.5s infinite alternate !important;
             border: 3px solid #ffffff !important;
-            display: block !important;
         }
         
-        .alert-test { background: #e67e22 !important; animation: pulse-red 0.5s infinite alternate; }
+        .alert-msg { background: #3498db !important; border: 2px solid white !important; }
 
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.5; } }
 
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
+        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.7rem; }
         
         #btn-vocal { background: #34495e; }
         #btn-vocal.on { background: #2ecc71; }
+        #btn-dict { background: #8e44ad; } /* Bouton Dictée */
         #btn-signal { background: #3498db; }
         #btn-signal.active { background: #2ecc71; }
         #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 8px; height: 45px; font-size: 0.9rem; }
         #btn-pec.active { background: #c0392b; }
-        #btn-test { background: #9b59b6; height: 35px; font-size: 0.65rem; }
-        #btn-sat { background: #2c3e50; height: 35px; font-size: 0.65rem; border: 1px solid #7f8c8d; }
+        #btn-test { background: #9b59b6; height: 35px; }
+        #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
 
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; }
-        #map { height: calc(100vh - 350px); width: 100%; background: #222; transition: all 0.2s ease-in-out; box-sizing: border-box; }
+        #map { height: calc(100vh - 350px); width: 100%; background: #222; transition: all 0.2s ease-in-out; }
 
         .proximity-alert {
             box-shadow: inset 0 0 50px 20px #ff0000 !important;
             border: 10px solid #ff0000 !important;
             animation: flash-border 0.4s infinite alternate;
-            z-index: 1001;
         }
-        @keyframes flash-border {
-            from { border-color: #ff0000; box-shadow: inset 0 0 50px 20px #ff0000; }
-            to { border-color: #ffffff; box-shadow: inset 0 0 80px 30px #ff0000; }
-        }
+        @keyframes flash-border { from { border-color: #ff0000; } to { border-color: #ffffff; } }
     </style>
 </head>
 <body>
@@ -70,11 +66,12 @@
     <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
     <div id="notification-banner">ZONE SÉCURISÉE</div>
     <div class="btn-grid">
-        <button id="btn-vocal">🎙️ VOCAL : OFF</button>
+        <button id="btn-vocal">🎙️ LIVE VOCAL</button>
+        <button id="btn-dict">🗣️ DICTER MSG</button>
         <button id="btn-signal">📡 REJOINDRE LE DISPOSITIF</button>
+        <button id="btn-sat">🗺️ VUE SATELLITE</button>
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
         <button id="btn-test">⚙️ TESTER ALERTE</button>
-        <button id="btn-sat">🗺️ VUE SATELLITE</button>
     </div>
 </div>
 
@@ -94,36 +91,45 @@
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
 
+    const banner = document.getElementById('notification-banner');
     const mapDiv = document.getElementById('map');
     const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
-    let isSat = false;
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    document.getElementById('btn-sat').onclick = function() {
-        if (!isSat) { map.removeLayer(osm); map.addLayer(sat); this.innerText = "🗺️ VUE ROUTE"; } 
-        else { map.removeLayer(sat); map.addLayer(osm); this.innerText = "🗺️ VUE SATELLITE"; }
-        isSat = !isSat;
-    };
-
-    let myPos = null;
-    let isVisible = false;
-    let isPEC = false;
-    let myStream = null;
-    let firstFix = true;
+    let myPos = null, isVisible = false, isPEC = false, myStream = null, firstFix = true;
     const markers = {};
-    const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
-    const banner = document.getElementById('notification-banner');
 
-    const peerId = myName.replace(/[^a-zA-Z0-9]/g, "");
-    const peer = new Peer(peerId);
-    
+    // --- DICTÉE VOCALE (Speech to Text) ---
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'fr-FR';
+        
+        document.getElementById('btn-dict').onclick = () => {
+            recognition.start();
+            banner.innerText = "ÉCOUTE EN COURS...";
+        };
+
+        recognition.onresult = (event) => {
+            const msg = event.results[0][0].transcript;
+            db.ref('last_msg').set({ from: myName, text: msg, ts: Date.now() });
+        };
+    }
+
+    // --- SYNTHÈSE VOCALE (Text to Speech) ---
+    function speak(text) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'fr-FR';
+        window.speechSynthesis.speak(utterance);
+    }
+
+    // --- GESTION DU LIVE VOCAL (PeerJS) ---
+    const peer = new Peer(myName.replace(/[^a-zA-Z0-9]/g, ""));
     navigator.mediaDevices.getUserMedia({ audio: true }).then(st => { 
         myStream = st; myStream.getAudioTracks()[0].enabled = false; 
-    }).catch(() => console.log("Audio bloqué"));
+    });
 
     document.getElementById('btn-vocal').onclick = function() {
-        if(!myStream) return;
         const active = myStream.getAudioTracks()[0].enabled;
         myStream.getAudioTracks()[0].enabled = !active;
         this.innerText = !active ? "🎙️ VOCAL : ON" : "🎙️ VOCAL : OFF";
@@ -135,15 +141,13 @@
         call.on('stream', st => { const audio = new Audio(); audio.srcObject = st; audio.play(); });
     });
 
+    // --- SYNC FIREBASE ---
     function sendUpdate() {
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
-        // Modification : On envoie si on a rejoint OU si on est en PEC
         if (isVisible || isPEC) {
             db.ref('vehicles/' + safeId).update({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
-        } else {
-            db.ref('vehicles/' + safeId).remove();
-        }
+        } else { db.ref('vehicles/' + safeId).remove(); }
     }
 
     document.getElementById('btn-signal').onclick = function() {
@@ -157,71 +161,55 @@
         isPEC = !isPEC;
         this.classList.toggle('active');
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        
-        // Sécurité : Si on lance une PEC sans avoir rejoint, on force la visibilité visuelle du bouton
-        if (isPEC && !isVisible) {
-            isVisible = true;
-            const btnJoin = document.getElementById('btn-signal');
-            btnJoin.classList.add('active');
-            btnJoin.innerText = "✅ DISPOSITIF REJOINT";
-        }
-        
+        if (isPEC && !isVisible) { isVisible = true; document.getElementById('btn-signal').classList.add('active'); }
         sendUpdate();
     };
 
-    document.getElementById('btn-test').onclick = function() {
-        db.ref('system_test').set({ active: true, from: myName, ts: Date.now() });
-        setTimeout(() => { db.ref('system_test').set({ active: false }); }, 3000);
-    };
-
+    // --- RÉCEPTION DES DONNÉES ET MESSAGES ---
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {};
         const data = root.vehicles || {};
-        const testSignal = root.system_test || { active: false };
+        const lastMsg = root.last_msg || {};
         let unitInAction = null;
         let collisionAlert = false;
-        const safeMyId = myName.replace(/[^a-zA-Z0-9]/g, "_");
 
-        for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
+        // Gestion des messages vocaux entrants
+        if (lastMsg.ts > (Date.now() - 5000) && lastMsg.from !== myName) {
+            banner.innerText = lastMsg.from + " : " + lastMsg.text;
+            banner.className = "alert-msg";
+            if (!window.lastRead || window.lastRead !== lastMsg.ts) {
+                speak(lastMsg.from + " dit " + lastMsg.text);
+                window.lastRead = lastMsg.ts;
+            }
+        }
 
         for (let id in data) {
             const v = data[id];
-            if (v.active === true) unitInAction = id.replace(/_/g, ' ');
-            if (id === safeMyId) continue;
-
+            if (v.active) unitInAction = id.replace(/_/g, ' ');
+            if (id === myName.replace(/[^a-zA-Z0-9]/g, "_")) continue;
             if (!markers[id]) {
                 markers[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
                 if (myStream) peer.call(id.replace(/[^a-zA-Z0-9]/g, ""), myStream);
             } else { markers[id].setLatLng([v.lat, v.lon]); }
-
             if (myPos && isVisible) {
                 const dist = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
                 if (dist < 500) collisionAlert = true;
             }
         }
 
-        if (unitInAction) {
+        if (unitInAction && !banner.className.includes('alert-msg')) {
             banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
             banner.className = "alert-active";
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-        } else if (testSignal.active === true) {
-            banner.innerText = "⚙️ TEST PAR : " + testSignal.from;
-            banner.className = "alert-test";
-        } else {
-            banner.innerText = "ZONE SÉCURISÉE";
-            banner.className = "";
         }
-
-        if (collisionAlert) { mapDiv.classList.add('proximity-alert'); } 
-        else { mapDiv.classList.remove('proximity-alert'); }
+        
+        if (collisionAlert) mapDiv.classList.add('proximity-alert');
+        else mapDiv.classList.remove('proximity-alert');
     });
 
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
-        myMarker.setLatLng([myPos.lat, myPos.lon]);
         if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
-        if (isVisible || isPEC) sendUpdate();
-        db.ref('vehicles/' + myName.replace(/[^a-zA-Z0-9]/g, "_")).onDisconnect().remove();
+        sendUpdate();
     }, null, { enableHighAccuracy: true });
 </script>
 </body>
