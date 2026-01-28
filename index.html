@@ -3,54 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SYSTÈME TACTIQUE</title>
+    <title>PROJET TCHAT</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
-        #sidebar { background: #2c2c2c; padding: 10px; border-bottom: 3px solid #e74c3c; z-index: 1000; }
-        #map { height: calc(100vh - 160px); width: 100%; background: #222; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
         
-        /* BANDEAU DE NOTIFICATION SURVITAMINÉ */
-        .status-badge { 
-            padding: 12px; border-radius: 4px; font-weight: bold; background: #27ae60; 
-            text-align: center; margin-top: 10px; font-size: 1.1rem; border: 2px solid transparent;
+        /* HEADER AVEC TITRE CENTRÉ (80% Largeur) */
+        #header-title {
+            width: 80%; margin: 10px auto; text-align: center;
+            background: #2c2c2c; padding: 10px; border-radius: 8px;
+            border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold;
+            text-transform: uppercase; letter-spacing: 2px;
         }
+
+        #app-container { display: flex; flex-direction: column; height: 100vh; }
         
-        .danger-mode { 
+        #interface-commandes { padding: 15px; background: #2c2c2c; z-index: 1000; }
+
+        /* BANDEAU DE NOTIFICATION GLOBAL */
+        #alerte-globale { 
+            padding: 15px; border-radius: 6px; font-weight: bold; text-align: center;
+            background: #27ae60; margin-bottom: 10px; font-size: 1.1rem;
+            transition: all 0.3s ease;
+        }
+
+        /* STYLE ALERTE EN CAS DE PRISE EN CHARGE */
+        .mode-alerte { 
             background: #ff0000 !important; 
-            animation: flash-critique 0.4s steps(2) infinite; 
-            border: 3px solid #ffffff !important;
             color: white !important;
-            box-shadow: 0 0 20px #ff0000;
+            animation: flash-alerte 0.5s infinite alternate;
+            border: 3px solid white !important;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
         }
-        @keyframes flash-critique { 0% { background: #ff0000; } 100% { background: #000000; } }
+        @keyframes flash-alerte { from { opacity: 1; } to { opacity: 0.6; } }
+
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         
-        button { width: 100%; padding: 12px; margin-top: 5px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; }
+        button { 
+            padding: 12px; border: none; border-radius: 4px; font-weight: bold; 
+            text-transform: uppercase; cursor: pointer; color: white; font-size: 0.8rem;
+        }
         #btn-vocal { background: #34495e; }
-        #btn-vocal.on { background: #2ecc71; }
+        #btn-vocal.active { background: #2ecc71; }
         #btn-signal { background: #3498db; }
         #btn-signal.active { background: #2ecc71; }
-        #btn-pec { background: #e67e22; }
+        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 50px; font-size: 1rem; }
         #btn-pec.active { background: #c0392b; }
-        
-        input { width: 100%; padding: 10px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 5px; box-sizing: border-box; }
-        #unit-list { list-style: none; padding: 0; margin: 5px 0; max-height: 50px; overflow-y: auto; font-size: 0.8rem; background: #111; border-radius: 4px; }
-        li { padding: 3px 8px; border-bottom: 1px solid #222; }
+
+        input { 
+            width: 100%; padding: 12px; background: #444; border: 1px solid #666; 
+            color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box;
+        }
+
+        #map { flex-grow: 1; width: 100%; background: #222; }
     </style>
 </head>
 <body>
 
-<div id="sidebar">
-    <input type="text" id="unit-id" placeholder="NOM DE L'UNITÉ">
-    <div style="display: flex; gap: 5px;">
-        <button id="btn-vocal">🎙️ VOCAL : OFF</button>
-        <button id="btn-signal">📡 S'AFFICHER</button>
+<div id="app-container">
+    <div id="header-title">PROJET TCHAT</div>
+
+    <div id="interface-commandes">
+        <input type="text" id="unit-name" placeholder="NOM DE L'UNITÉ">
+        
+        <div id="alerte-globale">ZONE SÉCURISÉE</div>
+
+        <div class="controls">
+            <button id="btn-vocal">VOCAL : OFF</button>
+            <button id="btn-signal">S'AFFICHER : NON</button>
+            <button id="btn-pec">DÉMARRER PRISE EN CHARGE</button>
+        </div>
     </div>
-    <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
-    <div id="main-status" class="status-badge">ZONE SÉCURISÉE</div>
-    <ul id="unit-list"></ul>
+
+    <div id="map"></div>
 </div>
-<div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
@@ -58,14 +84,14 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
 <script>
-    // --- INITIALISATION ---
+    // --- 1. CONFIGURATION ET MÉMOIRE ---
     const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    const idInput = document.getElementById('unit-id');
-    let myId = localStorage.getItem('unit_name') || "U-" + Math.floor(Math.random() * 999);
-    idInput.value = myId;
+    const nameInput = document.getElementById('unit-name');
+    let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
+    nameInput.value = myName;
 
     const map = L.map('map', { zoomControl: false }).setView([48.8566, 2.3522], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -76,18 +102,20 @@
     let myStream = null;
     const otherMarkers = {};
     const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
-    const statusBadge = document.getElementById('main-status');
+    const alerteBandeau = document.getElementById('alerte-globale');
 
-    // --- TCHAT VOCAL ---
-    const peer = new Peer(myId.replace(/\s+/g, '-'));
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(st => { myStream = st; myStream.getAudioTracks()[0].enabled = false; });
-    
+    // --- 2. VOCAL (PeerJS) ---
+    const peer = new Peer(myName.replace(/[^a-zA-Z0-9]/g, ""));
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(st => { 
+        myStream = st; myStream.getAudioTracks()[0].enabled = false; 
+    }).catch(() => console.log("Audio bloqué"));
+
     document.getElementById('btn-vocal').onclick = function() {
         if(!myStream) return;
         const active = myStream.getAudioTracks()[0].enabled;
         myStream.getAudioTracks()[0].enabled = !active;
-        this.innerText = !active ? "🎙️ VOCAL : ON" : "🎙️ VOCAL : OFF";
-        this.classList.toggle('on');
+        this.innerText = !active ? "VOCAL : ON" : "VOCAL : OFF";
+        this.classList.toggle('active');
     };
 
     peer.on('call', call => {
@@ -95,12 +123,12 @@
         call.on('stream', st => { const audio = new Audio(); audio.srcObject = st; audio.play(); });
     });
 
-    // --- MISE À JOUR BASE ---
-    function send() {
+    // --- 3. SYNCHRONISATION ---
+    function sync() {
         if (!myPos) return;
-        const safeId = myId.replace(/[.#$\[\]]/g, "_");
+        const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
         if (isVisible) {
-            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC });
         } else {
             db.ref('vehicles/' + safeId).remove();
         }
@@ -109,49 +137,46 @@
     document.getElementById('btn-signal').onclick = function() {
         isVisible = !isVisible;
         this.classList.toggle('active');
-        this.innerText = isVisible ? "📡 VISIBLE" : "📡 S'AFFICHER";
-        send();
+        this.innerText = isVisible ? "S'AFFICHER : OUI" : "S'AFFICHER : NON";
+        sync();
     };
 
     document.getElementById('btn-pec').onclick = function() {
         isPEC = !isPEC;
         this.classList.toggle('active');
-        this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        send();
+        this.innerText = isPEC ? "STOP INTERCEPTION" : "DÉMARRER PRISE EN CHARGE";
+        sync();
     };
 
-    idInput.onchange = function() {
-        db.ref('vehicles/' + myId.replace(/[.#$\[\]]/g, "_")).remove();
-        myId = this.value;
-        localStorage.setItem('unit_name', myId);
-        send();
+    nameInput.onchange = function() {
+        db.ref('vehicles/' + myName.replace(/[^a-zA-Z0-9]/g, "_")).remove();
+        myName = this.value;
+        localStorage.setItem('unit_name', myName);
+        sync();
     };
 
-    // --- LE CŒUR : ÉCOUTEUR DE NOTIFICATION ET POSITIONS ---
+    // --- 4. ÉCOUTEUR GLOBAL (NOTIFICATION + AUTRES) ---
     db.ref('vehicles/').on('value', (snap) => {
         const data = snap.val() || {};
-        const list = document.getElementById('unit-list');
-        list.innerHTML = "";
-        
-        let pecActiveId = null;
+        let pecActiveUser = null;
         let collisionAlert = false;
-        const safeMyId = myId.replace(/[.#$\[\]]/g, "_");
+        const safeMyId = myName.replace(/[^a-zA-Z0-9]/g, "_");
 
-        // Gérer les marqueurs
+        // Nettoyer marqueurs
         for (let id in otherMarkers) { if (!data[id]) { map.removeLayer(otherMarkers[id]); delete otherMarkers[id]; } }
 
         for (let id in data) {
             const v = data[id];
             
-            // VERIFICATION CRITIQUE POUR LA NOTIFICATION
-            if (v.active === true) { pecActiveId = id.replace(/_/g, ' '); }
+            // SI UNE UNITÉ (SOI OU AUTRE) EST EN PEC
+            if (v.active === true) { pecActiveUser = id; }
 
             if (id === safeMyId) continue;
 
             // Dessin Map
             if (!otherMarkers[id]) {
                 otherMarkers[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
-                if (myStream) peer.call(id.replace(/\s+/g, '-'), myStream);
+                if (myStream) peer.call(id.replace(/[^a-zA-Z0-9]/g, ""), myStream);
             } else {
                 otherMarkers[id].setLatLng([v.lat, v.lon]);
             }
@@ -161,34 +186,28 @@
                 const dist = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
                 if (dist < 50) collisionAlert = true;
             }
-
-            const li = document.createElement('li');
-            li.style.color = v.active ? '#ff4444' : '#3498db';
-            li.innerText = (v.active ? "🔴 " : "🚔 ") + id.replace(/_/g, ' ');
-            list.appendChild(li);
         }
 
-        // --- AFFICHAGE DE LA NOTIFICATION SUR TOUS LES ÉCRANS ---
-        if (pecActiveId) {
-            statusBadge.innerText = "🚨 ALERTE : " + pecActiveId.toUpperCase() + " EN INTERCEPTION";
-            statusBadge.classList.add('danger-mode');
+        // --- AFFICHAGE DE LA NOTIFICATION ---
+        if (pecActiveUser) {
+            alerteBandeau.innerText = "🚨 PRISE EN CHARGE : " + pecActiveUser.toUpperCase();
+            alerteBandeau.className = "mode-alerte";
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
         } else if (collisionAlert) {
-            statusBadge.innerText = "⚠️ DANGER : COLLISION PROCHE";
-            statusBadge.classList.add('danger-mode');
+            alerteBandeau.innerText = "⚠️ PROXIMITÉ CRITIQUE";
+            alerteBandeau.className = "mode-alerte";
         } else {
-            statusBadge.innerText = "ZONE SÉCURISÉE";
-            statusBadge.classList.remove('danger-mode');
+            alerteBandeau.innerText = "ZONE SÉCURISÉE";
+            alerteBandeau.className = "";
         }
     });
 
-    // --- GPS ---
+    // --- 5. GPS ---
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
-        if (!map.getBounds().contains(myMarker.getLatLng())) map.panTo([myPos.lat, myPos.lon]);
-        send();
-        db.ref('vehicles/' + myId.replace(/[.#$\[\]]/g, "_")).onDisconnect().remove();
+        sync();
+        db.ref('vehicles/' + myName.replace(/[^a-zA-Z0-9]/g, "_")).onDisconnect().remove();
     }, null, { enableHighAccuracy: true });
 
 </script>
