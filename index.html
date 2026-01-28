@@ -56,67 +56,92 @@
 
     const banner = document.getElementById('notification-banner');
     const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+    let isSat = false;
 
-    let myPos = null, isVisible = false, isPEC = false, myStream = null;
+    document.getElementById('btn-sat').onclick = function() {
+        if (!isSat) { map.removeLayer(osm); map.addLayer(sat); this.innerText = "🗺️ VUE ROUTE"; } 
+        else { map.removeLayer(sat); map.addLayer(osm); this.innerText = "🗺️ VUE SATELLITE"; }
+        isSat = !isSat;
+    };
+
+    let myPos = null, isVisible = false, isPEC = false, myStream = null, firstFix = true;
     const markers = {};
+    const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
 
-    // --- SYNTHÈSE VOCALE (Text to Speech) ---
     function speak(text) {
         if (!window.speechSynthesis) return;
-        window.speechSynthesis.cancel(); // Stoppe la lecture en cours
+        window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'fr-FR';
-        utterance.rate = 1.1;
         window.speechSynthesis.speak(utterance);
     }
 
-    // --- RECONNAISSANCE VOCALE (Speech to Text) ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
         recognition.lang = 'fr-FR';
-        recognition.continuous = false;
-
-        document.getElementById('btn-dict').onclick = () => {
-            try { recognition.start(); banner.innerText = "ÉCOUTE EN COURS..."; } catch(e) {}
-        };
-
+        document.getElementById('btn-dict').onclick = () => { try { recognition.start(); banner.innerText = "ÉCOUTE EN COURS..."; } catch(e) {} };
         recognition.onresult = (event) => {
             const msg = event.results[0][0].transcript;
             db.ref('last_msg').set({ from: myName, text: msg, ts: Date.now() });
         };
-        
-        recognition.onerror = () => { banner.innerText = "ERREUR MICRO"; setTimeout(()=> banner.innerText="ZONE SÉCURISÉE", 2000); };
     }
 
-    // --- BOUTON REJOINDRE (Indispensable pour débloquer l'audio du navigateur) ---
+    const peer = new Peer(myName.replace(/[^a-zA-Z0-9]/g, ""));
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(st => { 
+        myStream = st; myStream.getAudioTracks()[0].enabled = false; 
+    });
+
+    document.getElementById('btn-vocal').onclick = function() {
+        const active = myStream.getAudioTracks()[0].enabled;
+        myStream.getAudioTracks()[0].enabled = !active;
+        this.innerText = !active ? "🎙️ VOCAL : ON" : "🎙️ VOCAL : OFF";
+        this.classList.toggle('on');
+    };
+
+    peer.on('call', call => {
+        call.answer(myStream);
+        call.on('stream', st => { const audio = new Audio(); audio.srcObject = st; audio.play(); });
+    });
+
+    function sendUpdate() {
+        if (!myPos) return;
+        const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
+        if (isVisible || isPEC) {
+            db.ref('vehicles/' + safeId).update({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
+        } else { db.ref('vehicles/' + safeId).remove(); }
+    }
+
     document.getElementById('btn-signal').onclick = function() {
         isVisible = !isVisible;
         this.classList.toggle('active');
         this.innerText = isVisible ? "✅ DISPOSITIF REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
-        
-        // Déblocage forcé du son sur mobile au premier clic
         speak(""); 
         sendUpdate();
     };
 
-    // --- LOGIQUE FIREBASE ---
+    document.getElementById('btn-pec').onclick = function() {
+        isPEC = !isPEC;
+        this.classList.toggle('active');
+        this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
+        if (isPEC && !isVisible) { isVisible = true; document.getElementById('btn-signal').classList.add('active'); }
+        sendUpdate();
+    };
+
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {};
         const data = root.vehicles || {};
         const lastMsg = root.last_msg || {};
         let unitInAction = null;
 
-        // Gestion du Message Vocal entrant
         if (lastMsg.ts > (Date.now() - 6000) && lastMsg.from !== myName) {
             if (!window.lastMsgTs || window.lastMsgTs !== lastMsg.ts) {
                 window.lastMsgTs = lastMsg.ts;
                 banner.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
                 banner.className = "alert-msg";
                 speak(lastMsg.from + " dit " + lastMsg.text);
-                
-                // Le message reste 5 secondes puis on remet l'état normal
                 setTimeout(() => { if(window.lastMsgTs === lastMsg.ts) banner.className = ""; }, 5000);
             }
         }
@@ -138,24 +163,13 @@
         }
     });
 
-    function sendUpdate() {
-        if (!myPos) return;
-        const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
-        if (isVisible || isPEC) {
-            db.ref('vehicles/' + safeId).update({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
-        } else { db.ref('vehicles/' + safeId).remove(); }
-    }
-
-    document.getElementById('btn-pec').onclick = function() {
-        isPEC = !isPEC;
-        this.classList.toggle('active');
-        this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        if (isPEC && !isVisible) { isVisible = true; document.getElementById('btn-signal').classList.add('active'); }
-        sendUpdate();
-    };
-
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
+        myMarker.setLatLng([myPos.lat, myPos.lon]);
+        if (firstFix) { 
+            map.setView([myPos.lat, myPos.lon], 17); // Rétablit le zoom précis au démarrage
+            firstFix = false; 
+        }
         if (isVisible || isPEC) sendUpdate();
     }, null, { enableHighAccuracy: true });
 </script>
