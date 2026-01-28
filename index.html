@@ -7,37 +7,63 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
-        #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 12px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; }
-        #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
-        #notification-banner { padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; background: #27ae60; margin-bottom: 10px; font-size: 1.1rem; border: 2px solid transparent; min-height: 25px; transition: background 0.3s; }
-        .alert-msg { background: #3498db !important; border: 3px solid white !important; color: white !important; }
-        .alert-active { background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate !important; border: 3px solid white !important; }
-        @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.5; } }
-        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        
+        /* BANDEAU SUPÉRIEUR FUSIONNÉ */
+        #main-header {
+            width: 85%; margin: 10px auto; text-align: center;
+            padding: 15px; border: 2px solid #e74c3c; color: #e74c3c;
+            font-weight: bold; background: #2c2c2c; border-radius: 8px;
+            text-transform: uppercase; letter-spacing: 2px;
+            font-size: 1.2rem; min-height: 30px; transition: all 0.3s;
+        }
+
+        /* ÉTATS DU BANDEAU */
+        .header-alert { 
+            background: #ff0000 !important; color: white !important; 
+            border: 3px solid white !important;
+            animation: pulse-header 0.8s infinite alternate;
+        }
+        .header-msg { background: #3498db !important; color: white !important; border: 2px solid white !important; }
+
+        @keyframes pulse-header { 
+            0% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0.7; transform: scale(1.02); }
+        }
+
+        #ui-panel { padding: 5px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
+
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.7rem; }
+        
         #btn-vocal { background: #34495e; } #btn-vocal.on { background: #2ecc71; }
-        #btn-dict { background: #8e44ad; } #btn-signal { background: #3498db; } #btn-signal.active { background: #2ecc71; }
-        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 8px; height: 45px; } #btn-pec.active { background: #c0392b; }
-        #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; } #btn-test { background: #9b59b6; height: 35px; }
-        input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; }
-        #map { height: calc(100vh - 350px); width: 100%; background: #222; }
+        #btn-dict { background: #8e44ad; } 
+        #btn-signal { background: #3498db; grid-column: span 2; height: 45px; font-size: 0.8rem; }
+        #btn-signal.active { background: #2ecc71; }
+        #btn-pec { background: #e67e22; grid-column: span 2; height: 45px; font-size: 0.9rem; }
+        #btn-pec.active { background: #c0392b; }
+        #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
+        #btn-test { background: #9b59b6; height: 35px; }
+
+        input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 5px; box-sizing: border-box; }
+        #map { height: calc(100vh - 360px); width: 100%; background: #222; }
     </style>
 </head>
 <body>
 
-<div id="main-title">TACTICAL DEPLOY</div>
+<div id="main-header">TACTICAL DEPLOY</div>
+
 <div id="ui-panel">
     <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
-    <div id="notification-banner">ZONE SÉCURISÉE</div>
     <div class="btn-grid">
         <button id="btn-vocal">🎙️ LIVE VOCAL</button>
         <button id="btn-dict">🗣️ DICTER MSG</button>
         <button id="btn-signal">📡 REJOINDRE LE DISPOSITIF</button>
-        <button id="btn-sat">🗺️ VUE SATELLITE</button>
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
-        <button id="btn-test">⚙️ TESTER ALERTE</button>
+        <button id="btn-sat">🗺️ SATELLITE</button>
+        <button id="btn-test">⚙️ TEST ALERTE</button>
     </div>
 </div>
+
 <div id="map"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -54,12 +80,11 @@
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
 
-    const banner = document.getElementById('notification-banner');
+    const header = document.getElementById('main-header');
     const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
-    let isSat = false;
-    let isLockedForMsg = false;
+    let isSat = false, isLockedForMsg = false, altToggle = false;
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playBip() {
@@ -73,8 +98,8 @@
     }
 
     document.getElementById('btn-sat').onclick = function() {
-        if (!isSat) { map.removeLayer(osm); map.addLayer(sat); this.innerText = "🗺️ VUE ROUTE"; } 
-        else { map.removeLayer(sat); map.addLayer(osm); this.innerText = "🗺️ VUE SATELLITE"; }
+        if (!isSat) { map.removeLayer(osm); map.addLayer(sat); } 
+        else { map.removeLayer(sat); map.addLayer(osm); }
         isSat = !isSat;
     };
 
@@ -94,7 +119,7 @@
     if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
         recognition.lang = 'fr-FR';
-        document.getElementById('btn-dict').onclick = () => { try { recognition.start(); banner.innerText = "ÉCOUTE EN COURS..."; } catch(e) {} };
+        document.getElementById('btn-dict').onclick = () => { try { recognition.start(); header.innerText = "ÉCOUTE..."; } catch(e) {} };
         recognition.onresult = (event) => {
             const msg = event.results[0][0].transcript;
             db.ref('last_msg').set({ from: myName, text: msg, ts: Date.now() });
@@ -109,7 +134,7 @@
     document.getElementById('btn-vocal').onclick = function() {
         const active = myStream.getAudioTracks()[0].enabled;
         myStream.getAudioTracks()[0].enabled = !active;
-        this.innerText = !active ? "🎙️ VOCAL : ON" : "🎙️ VOCAL : OFF";
+        this.innerText = !active ? "🎙️ VOCAL : ON" : "🎙️ LIVE VOCAL";
         this.classList.toggle('on');
     };
 
@@ -138,10 +163,15 @@
         isPEC = !isPEC;
         this.classList.toggle('active');
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        if (isPEC && !isVisible) { isVisible = true; document.getElementById('btn-signal').classList.add('active'); }
+        if (isPEC && !isVisible) { 
+            isVisible = true; 
+            document.getElementById('btn-signal').classList.add('active'); 
+            document.getElementById('btn-signal').innerText = "✅ DISPOSITIF REJOINT";
+        }
         sendUpdate();
     };
 
+    // LOGIQUE FUSIONNÉE TITRE / ALERTE / MESSAGE
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {};
         const data = root.vehicles || {};
@@ -149,55 +179,43 @@
         const now = Date.now();
         let unitInAction = null;
 
-        // Gestion message bleu (SANS BIP)
+        // Message bleu prioritaire
         if (lastMsg.ts && lastMsg.from !== myName) {
             if (!window.lastShownTs || window.lastShownTs !== lastMsg.ts) {
                 window.lastShownTs = lastMsg.ts;
                 isLockedForMsg = true;
-                banner.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
-                banner.className = "alert-msg";
+                header.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
+                header.className = "header-msg";
                 setTimeout(() => speak(lastMsg.from + " dit " + lastMsg.text), 100);
-                setTimeout(() => { 
-                    isLockedForMsg = false; banner.className = "";
-                    db.ref().once('value', (s) => processDisplay(s.val()?.vehicles || {})); 
-                }, 7000);
+                setTimeout(() => { isLockedForMsg = false; header.className = ""; }, 7000);
             }
         }
 
-        // Nettoyage et affichage conditionnel des marqueurs
+        // Nettoyage marqueurs
         for (let id in markers) { map.removeLayer(markers[id]); delete markers[id]; }
         
-        // On n'affiche les marqueurs que si "REJOINDRE" (isVisible) est activé
-        if (isVisible) {
-            for (let id in data) {
-                const v = data[id];
-                if (now - v.ts > 30000) continue;
-                if (v.active) unitInAction = id.replace(/_/g, ' ');
-                if (id === myName.replace(/[^a-zA-Z0-9]/g, "_")) continue;
+        for (let id in data) {
+            const v = data[id];
+            if (now - v.ts > 30000) continue;
+            if (v.active) unitInAction = id.replace(/_/g, ' ');
+            if (isVisible && id !== myName.replace(/[^a-zA-Z0-9]/g, "_")) {
                 markers[id] = L.marker([v.lat, v.lon]).addTo(map);
-            }
-        } else {
-            // Même si invisible, on détecte quand même si quelqu'un est en PEC pour le bandeau
-            for (let id in data) {
-                if (data[id].active && (now - data[id].ts < 30000)) unitInAction = id.replace(/_/g, ' ');
             }
         }
 
-        function processDisplay(currentData) {
-            if (isLockedForMsg) return;
-            let actionFound = false;
-            for (let id in currentData) {
-                if (currentData[id].active && (now - currentData[id].ts < 30000)) {
-                    // BIP SEULEMENT SI ALERTE ACTIVE
-                    if (banner.className !== "alert-active") playBip(); 
-                    banner.innerText = "🚨 ALERTE : " + id.replace(/_/g, ' ').toUpperCase();
-                    banner.className = "alert-active";
-                    actionFound = true; break;
-                }
+        // Animation alternée si alerte
+        if (!isLockedForMsg) {
+            if (unitInAction) {
+                if (header.className !== "header-alert") playBip();
+                header.className = "header-alert";
+                // On alterne le texte toutes les secondes
+                altToggle = !altToggle;
+                header.innerText = altToggle ? "🚨 " + unitInAction.toUpperCase() : "TACTICAL DEPLOY";
+            } else {
+                header.innerText = "TACTICAL DEPLOY";
+                header.className = "";
             }
-            if (!actionFound) { banner.innerText = "ZONE SÉCURISÉE"; banner.className = ""; }
         }
-        processDisplay(data);
     });
 
     navigator.geolocation.watchPosition((p) => {
@@ -206,6 +224,9 @@
         if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
         if (isVisible || isPEC) sendUpdate();
     }, null, { enableHighAccuracy: true });
+
+    // Boucle d'alternance du titre
+    setInterval(() => { if (!isLockedForMsg) db.ref().once('value', (s) => {}); }, 1000);
 </script>
 </body>
 </html>
