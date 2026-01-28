@@ -15,7 +15,7 @@
             text-transform: uppercase; letter-spacing: 1px;
         }
 
-        #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; }
+        #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
 
         #notification-banner { 
             padding: 15px; border-radius: 4px; font-weight: bold; text-align: center;
@@ -50,7 +50,16 @@
             color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; 
         }
         
-        #map { height: calc(100vh - 350px); width: 100%; background: #222; }
+        #map { 
+            height: calc(100vh - 350px); width: 100%; background: #222; 
+            transition: box-shadow 0.5s ease-in-out;
+        }
+
+        /* EFFET DEGRADE ROUGE SUR LE TOUR DE LA CARTE */
+        .proximity-alert {
+            box-shadow: inset 0 0 30px 10px rgba(255, 0, 0, 0.8), 0 0 20px 5px rgba(255, 0, 0, 0.6) !important;
+            z-index: 1001;
+        }
     </style>
 </head>
 <body>
@@ -85,24 +94,15 @@
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
 
-    // --- CARTOGRAPHIE ---
-    // On initialise sans vue fixe, le GPS s'en chargera
+    const mapDiv = document.getElementById('map');
     const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
-    
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false;
 
     document.getElementById('btn-sat').onclick = function() {
-        if (!isSat) {
-            map.removeLayer(osm);
-            map.addLayer(sat);
-            this.innerText = "🗺️ VUE ROUTE";
-        } else {
-            map.removeLayer(sat);
-            map.addLayer(osm);
-            this.innerText = "🗺️ VUE SATELLITE";
-        }
+        if (!isSat) { map.removeLayer(osm); map.addLayer(sat); this.innerText = "🗺️ VUE ROUTE"; } 
+        else { map.removeLayer(sat); map.addLayer(osm); this.innerText = "🗺️ VUE SATELLITE"; }
         isSat = !isSat;
     };
 
@@ -110,12 +110,11 @@
     let isVisible = false;
     let isPEC = false;
     let myStream = null;
-    let firstFix = true; // Pour le recadrage automatique au démarrage
+    let firstFix = true;
     const markers = {};
     const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
     const banner = document.getElementById('notification-banner');
 
-    // --- TCHAT VOCAL ---
     const peer = new Peer(myName.replace(/[^a-zA-Z0-9]/g, ""));
     navigator.mediaDevices.getUserMedia({ audio: true }).then(st => { 
         myStream = st; myStream.getAudioTracks()[0].enabled = false; 
@@ -137,11 +136,8 @@
     function sendUpdate() {
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
-        if (isVisible) {
-            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC });
-        } else {
-            db.ref('vehicles/' + safeId).remove();
-        }
+        if (isVisible) { db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC }); } 
+        else { db.ref('vehicles/' + safeId).remove(); }
     }
 
     document.getElementById('btn-signal').onclick = function() {
@@ -181,9 +177,7 @@
             if (!markers[id]) {
                 markers[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
                 if (myStream) peer.call(id.replace(/[^a-zA-Z0-9]/g, ""), myStream);
-            } else {
-                markers[id].setLatLng([v.lat, v.lon]);
-            }
+            } else { markers[id].setLatLng([v.lat, v.lon]); }
 
             if (myPos) {
                 const dist = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
@@ -191,38 +185,35 @@
             }
         }
 
+        // --- GESTION VISUELLE ---
         if (unitInAction) {
             banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
-            banner.className = "alert-active";
+            banner.className = "notification-banner alert-active";
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
         } else if (testSignal.active === true) {
             banner.innerText = "⚙️ TEST PAR : " + testSignal.from;
-            banner.className = "alert-test";
-        } else if (collisionAlert) {
-            banner.innerText = "⚠️ PROXIMITÉ CRITIQUE";
-            banner.className = "alert-active";
+            banner.className = "notification-banner alert-test";
         } else {
             banner.innerText = "ZONE SÉCURISÉE";
-            banner.className = "";
+            banner.className = "notification-banner";
+        }
+
+        // Halo rouge dégradé sur le tour de la carte si collision proche
+        if (collisionAlert) {
+            mapDiv.classList.add('proximity-alert');
+            if (navigator.vibrate) navigator.vibrate(500);
+        } else {
+            mapDiv.classList.remove('proximity-alert');
         }
     });
 
-    // --- GPS AMÉLIORÉ ---
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
-        
-        // AU TOUT PREMIER ALLUMAGE : On centre la carte sur soi
-        if (firstFix) {
-            map.setView([myPos.lat, myPos.lon], 17);
-            firstFix = false;
-        }
-
+        if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
         if (isVisible) sendUpdate();
         db.ref('vehicles/' + myName.replace(/[^a-zA-Z0-9]/g, "_")).onDisconnect().remove();
-    }, (err) => {
-        alert("Erreur GPS : Veuillez activer la localisation et autoriser le navigateur.");
-    }, { enableHighAccuracy: true });
+    }, (err) => { alert("Erreur GPS : Autorisez la localisation."); }, { enableHighAccuracy: true });
 </script>
 </body>
 </html>
