@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#e74c3c">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Système de Prise en Charge</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
+        #app-container { display: flex; flex-direction: column; height: 100vh; }
+        #sidebar { 
+            width: 100%; max-height: 40%; background: #2c2c2c; padding: 15px; 
+            border-bottom: 2px solid #e74c3c; z-index: 1000; display: flex; 
+            flex-direction: column; box-sizing: border-box; overflow-y: auto; 
+        }
+        #map { flex-grow: 1; width: 100%; }
+        .status-badge { 
+            padding: 10px; border-radius: 4px; font-weight: bold; background: #27ae60; 
+            text-align: center; margin-top: 10px; transition: background 0.3s; font-size: 0.9rem;
+        }
+        .danger-mode { background: #e74c3c !important; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        #btn-prise-charge {
+            background: #e67e22; color: white; border: none; padding: 12px;
+            font-weight: bold; cursor: pointer; border-radius: 4px; margin-top: 10px;
+            text-transform: uppercase; font-size: 0.8rem;
+        }
+        #btn-prise-charge.active { background: #c0392b; box-shadow: 0 0 15px #e74c3c; }
+        #btn-vocal {
+            background: #34495e; color: white; border: none; padding: 10px;
+            margin-top: 10px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 0.8rem;
+        }
+        #btn-vocal.on { background: #2ecc71; }
+        h2 { color: #e74c3c; text-transform: uppercase; font-size: 1rem; margin: 0; }
+        h3 { font-size: 0.9rem; color: #bdc3c7; margin: 10px 0 5px 0; }
+        hr { border: 0; border-top: 1px solid #444; margin: 10px 0; }
+        ul { list-style: none; padding: 0; margin: 0; }
+        li { padding: 5px 0; border-bottom: 1px solid #333; font-size: 0.8rem; }
+        #unit-id-input {
+            background: #444; border: 1px solid #666; color: white; padding: 8px;
+            border-radius: 4px; width: 100%; margin-top: 5px; box-sizing: border-box; font-size: 0.9rem;
+        }
+        @media (min-width: 768px) {
+            #app-container { flex-direction: row; }
+            #sidebar { width: 300px; height: 100vh; max-height: 100vh; border-bottom: none; border-right: 2px solid #e74c3c; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div id="sidebar">
+        <h2>Suivi Prise en Charge</h2>
+        <input type="text" id="unit-id-input" placeholder="Nom de l'Unité">
+        <p style="margin: 5px 0; font-size: 0.9rem;"><strong>Vitesse :</strong> <span id="speed">0</span> km/h</p>
+        <button id="btn-vocal">Micro : OFF</button>
+        <button id="btn-prise-charge">Démarrer Prise en Charge</button>
+        <div id="main-status" class="status-badge">ZONE SÉCURISÉE</div>
+        <hr>
+        <h3>Unités en service</h3>
+        <ul id="unit-list"></ul>
+    </div>
+    <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js');
+        });
+    }
+</script>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, set, onValue, onDisconnect, update, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const idInput = document.getElementById('unit-id-input');
+    let myId = localStorage.getItem('unit_name') || "Unité-" + Math.floor(Math.random() * 1000);
+    idInput.value = myId;
+
+    const peer = new Peer(myId.replace(/\s+/g, '-')); 
+    let myStream;
+    const btnVocal = document.getElementById('btn-vocal');
+
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        myStream = stream;
+        myStream.getAudioTracks()[0].enabled = false;
+    }).catch(err => console.log("Micro non dispo"));
+
+    btnVocal.addEventListener('click', () => {
+        if(!myStream) return;
+        const isOff = myStream.getAudioTracks()[0].enabled;
+        myStream.getAudioTracks()[0].enabled = !isOff;
+        btnVocal.innerText = !isOff ? "Micro : ON" : "Micro : OFF";
+        btnVocal.classList.toggle('on');
+    });
+
+    peer.on('call', call => {
+        call.answer(myStream);
+        call.on('stream', userStream => {
+            const audio = document.createElement('audio');
+            audio.srcObject = userStream; audio.play();
+        });
+    });
+
+    idInput.addEventListener('change', () => {
+        const oldId = myId;
+        myId = idInput.value.trim() || "Anonyme";
+        localStorage.setItem('unit_name', myId);
+        remove(ref(db, 'vehicles/' + oldId));
+        if(myCurrentPos) updatePosition(myCurrentPos.lat, myCurrentPos.lon, document.getElementById('speed').innerText);
+    });
+
+    const map = L.map('map').setView([48.8566, 2.3522], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    const otherVehicles = {};
+    let myCurrentPos = null;
+    let isActionActive = false;
+
+    const btnAction = document.getElementById('btn-prise-charge');
+    btnAction.addEventListener('click', () => {
+        isActionActive = !isActionActive;
+        btnAction.classList.toggle('active');
+        btnAction.innerText = isActionActive ? "En cours de Prise en Charge" : "Démarrer Prise en Charge";
+        if(myCurrentPos) updatePosition(myCurrentPos.lat, myCurrentPos.lon, document.getElementById('speed').innerText);
+    });
+
+    function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3; 
+        const a = Math.sin(((lat2-lat1)*Math.PI/180)/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(((lon2-lon1)*Math.PI/180)/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    onValue(ref(db, 'vehicles/'), (snapshot) => {
+        const data = snapshot.val();
+        const unitList = document.getElementById('unit-list');
+        const statusBadge = document.getElementById('main-status');
+        unitList.innerHTML = ""; 
+        let collisionAlert = false;
+        for (let id in data) {
+            if (id === myId) continue;
+            const { lat, lon, speed, active } = data[id];
+            const iconColor = active ? '🔴' : '🚔';
+            if (!otherVehicles[id]) {
+                otherVehicles[id] = L.marker([lat, lon], {icon: L.divIcon({className: 'other-unit', html: iconColor, iconSize: [20, 20]})}).addTo(map).bindPopup(id);
+                peer.call(id.replace(/\s+/g, '-'), myStream);
+            } else {
+                otherVehicles[id].setLatLng([lat, lon]);
+                otherVehicles[id].setIcon(L.divIcon({className: 'other-unit', html: iconColor, iconSize: [20, 20]}));
+            }
+            if (myCurrentPos) {
+                const dist = getDistance(myCurrentPos.lat, myCurrentPos.lon, lat, lon);
+                if (dist < 100) collisionAlert = true;
+            }
+            const li = document.createElement('li');
+            li.style.color = active ? '#e74c3c' : 'white';
+            li.innerText = `${id} - ${speed} km/h ${active ? '(ACTIF)' : ''}`;
+            unitList.appendChild(li);
+        }
+        if (collisionAlert) {
+            statusBadge.innerText = "⚠️ PROXIMITÉ CRITIQUE"; statusBadge.classList.add('danger-mode');
+            if ("vibrate" in navigator) navigator.vibrate(500);
+        } else {
+            statusBadge.innerText = "ZONE SÉCURISÉE"; statusBadge.classList.remove('danger-mode');
+        }
+    });
+
+    const myMarker = L.marker([0, 0], { zIndexOffset: 1000 }).addTo(map).bindPopup("MOI");
+    const safetyZone = L.circle([0, 0], { color: '#3498db', radius: 100 }).addTo(map);
+
+    function updatePosition(lat, lon, speed) {
+        set(ref(db, 'vehicles/' + myId), { lat, lon, speed, active: isActionActive });
+    }
+
+    if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition((position) => {
+            const lat = position.coords.latitude; const lon = position.coords.longitude;
+            const speed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0;
+            myCurrentPos = { lat, lon };
+            myMarker.setLatLng([lat, lon]); safetyZone.setLatLng([lat, lon]); map.setView([lat, lon]);
+            document.getElementById('speed').innerText = speed;
+            updatePosition(lat, lon, speed);
+            onDisconnect(ref(db, 'vehicles/' + myId)).remove();
+        }, null, { enableHighAccuracy: true });
+    }
+</script>
+</body>
+</html>
