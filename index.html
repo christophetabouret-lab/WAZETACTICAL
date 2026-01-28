@@ -3,51 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Système de Prise en Charge</title>
+    <title>PEC TACTIQUE</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
+        body { margin: 0; font-family: sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
         #app-container { display: flex; flex-direction: column; height: 100vh; }
-        #sidebar { background: #2c2c2c; padding: 10px; border-bottom: 2px solid #e74c3c; z-index: 1000; }
+        #sidebar { background: #2c2c2c; padding: 10px; border-bottom: 3px solid #e74c3c; z-index: 1000; }
         #map { flex-grow: 1; width: 100%; background: #222; }
         
         .status-badge { 
             padding: 12px; border-radius: 4px; font-weight: bold; background: #27ae60; 
-            text-align: center; margin-top: 10px; font-size: 1rem;
+            text-align: center; margin-top: 10px; font-size: 1rem; border: 2px solid transparent;
         }
         
-        /* Alerte Rouge Flashy */
+        /* ALERTE ROUGE CRITIQUE */
         .danger-mode { 
             background: #ff0000 !important; 
-            color: white !important;
-            animation: flash 0.5s steps(2) infinite; 
-            border: 3px solid white;
+            animation: blinker 0.6s linear infinite; 
+            border: 2px solid white;
         }
-        @keyframes flash { 0% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes blinker { 50% { opacity: 0.3; } }
         
-        button { width: 100%; padding: 12px; margin-top: 8px; border: none; border-radius: 4px; font-weight: bold; text-transform: uppercase; cursor: pointer; color: white; }
+        button { width: 100%; padding: 12px; margin-top: 8px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; }
         #btn-vocal { background: #34495e; }
         #btn-vocal.on { background: #2ecc71; }
-        #btn-signalement { background: #3498db; }
-        #btn-signalement.active { background: #2ecc71; }
-        #btn-prise-charge { background: #e67e22; }
-        #btn-prise-charge.active { background: #c0392b; }
+        #btn-signal { background: #3498db; }
+        #btn-signal.active { background: #2ecc71; }
+        #btn-pec { background: #e67e22; }
+        #btn-pec.active { background: #c0392b; }
         
-        #unit-id-input { width: 100%; padding: 8px; background: #444; border: 1px solid #666; color: white; box-sizing: border-box; }
+        input { width: 100%; padding: 8px; background: #444; border: 1px solid #666; color: white; box-sizing: border-box; }
         ul { list-style: none; padding: 0; margin: 10px 0 0 0; max-height: 80px; overflow-y: auto; font-size: 0.8rem; }
-        li { padding: 4px; border-bottom: 1px solid #333; }
+        li { padding: 5px; border-bottom: 1px solid #333; }
     </style>
 </head>
 <body>
 
 <div id="app-container">
     <div id="sidebar">
-        <input type="text" id="unit-id-input" placeholder="NOM DE L'UNITÉ">
+        <input type="text" id="unit-id" placeholder="NOM DE L'UNITÉ">
         <div style="display: flex; gap: 5px;">
-            <button id="btn-vocal">Micro : OFF</button>
-            <button id="btn-signalement">S'AFFICHER</button>
+            <button id="btn-vocal">MICRO : OFF</button>
+            <button id="btn-signal">S'AFFICHER</button>
         </div>
-        <button id="btn-prise-charge">Démarrer Prise en Charge</button>
+        <button id="btn-pec">DÉMARRER PRISE EN CHARGE</button>
         <div id="main-status" class="status-badge">ZONE SÉCURISÉE</div>
         <ul id="unit-list"></ul>
     </div>
@@ -60,153 +59,145 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
 <script>
-    // 1. CONFIGURATION FIREBASE
+    // 1. INITIALISATION FIREBASE
     const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // 2. IDENTITÉ ET MÉMOIRE
-    const idInput = document.getElementById('unit-id-input');
+    const idInput = document.getElementById('unit-id');
     let myId = localStorage.getItem('unit_name') || "Unité-" + Math.floor(Math.random() * 100);
     idInput.value = myId;
 
-    // 3. CARTE
     const map = L.map('map').setView([48.8566, 2.3522], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    const otherVehicles = {};
-    let myCurrentPos = null;
+    let myPos = null;
     let isVisible = false;
     let isPEC = false;
-    let myStream;
-
+    let myStream = null;
+    const otherMarkers = {};
     const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
     const statusBadge = document.getElementById('main-status');
 
-    // 4. TCHAT VOCAL
+    // 2. TCHAT VOCAL (PEERJS)
     const peer = new Peer(myId.replace(/\s+/g, '-'));
     const btnVocal = document.getElementById('btn-vocal');
 
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         myStream = stream;
         myStream.getAudioTracks()[0].enabled = false;
-    }).catch(err => console.warn("Micro bloqué"));
+    }).catch(() => console.log("Micro refusé"));
 
     btnVocal.onclick = () => {
         if(!myStream) return;
-        const state = myStream.getAudioTracks()[0].enabled;
-        myStream.getAudioTracks()[0].enabled = !state;
-        btnVocal.innerText = !state ? "Micro : ON" : "Micro : OFF";
+        const active = myStream.getAudioTracks()[0].enabled;
+        myStream.getAudioTracks()[0].enabled = !active;
+        btnVocal.innerText = !active ? "MICRO : ON" : "MICRO : OFF";
         btnVocal.classList.toggle('on');
     };
 
     peer.on('call', call => {
         call.answer(myStream);
-        call.on('stream', userStream => {
+        call.on('stream', st => {
             const audio = document.createElement('audio');
-            audio.srcObject = userStream; audio.play();
+            audio.srcObject = st; audio.play();
         });
     });
 
-    // 5. SYNCHRONISATION ET ALERTES
-    function updateDB() {
-        if (!myCurrentPos) return;
+    // 3. SYNCHRONISATION
+    function pushData() {
+        if (!myPos) return;
         const safeId = myId.replace(/[.#$\[\]]/g, "_");
         if (isVisible) {
-            db.ref('vehicles/' + safeId).set({
-                lat: myCurrentPos.lat, lon: myCurrentPos.lon,
-                active: isPEC, ts: Date.now()
-            });
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
         } else {
             db.ref('vehicles/' + safeId).remove();
         }
     }
 
-    document.getElementById('btn-signalement').onclick = function() {
+    document.getElementById('btn-signal').onclick = function() {
         isVisible = !isVisible;
         this.classList.toggle('active');
         this.innerText = isVisible ? "VISIBLE" : "S'AFFICHER";
-        updateDB();
+        pushData();
     };
 
-    document.getElementById('btn-prise-charge').onclick = function() {
+    document.getElementById('btn-pec').onclick = function() {
         isPEC = !isPEC;
         this.classList.toggle('active');
-        this.innerText = isPEC ? "STOP PRISE EN CHARGE" : "DÉMARRER PRISE EN CHARGE";
-        updateDB();
+        this.innerText = isPEC ? "EN INTERCEPTION" : "DÉMARRER PRISE EN CHARGE";
+        pushData();
     };
 
     idInput.onchange = function() {
         db.ref('vehicles/' + myId.replace(/[.#$\[\]]/g, "_")).remove();
         myId = this.value;
         localStorage.setItem('unit_name', myId);
-        updateDB();
+        pushData();
     };
 
-    // 6. ÉCOUTEUR PRINCIPAL (FONCTIONNE POUR TOUS)
+    // 4. RÉCEPTION GLOBALE
     db.ref('vehicles/').on('value', (snap) => {
         const data = snap.val() || {};
         const list = document.getElementById('unit-list');
         list.innerHTML = "";
-        
-        let unitInAction = null;
-        let collisionWarning = false;
+        let pecUnit = null;
+        let collision = false;
         const safeMyId = myId.replace(/[.#$\[\]]/g, "_");
 
-        // Gérer les marqueurs des autres
+        // Nettoyage marqueurs
+        for (let id in otherMarkers) {
+            if (!data[id]) { map.removeLayer(otherMarkers[id]); delete otherMarkers[id]; }
+        }
+
         for (let id in data) {
             const v = data[id];
-            
-            // Priorité : Si n'importe quelle unité est active dans la base
-            if (v.active === true) {
-                unitInAction = id.replace(/_/g, ' ');
-            }
+            if (v.active) pecUnit = id.replace(/_/g, ' ');
 
             if (id === safeMyId) continue;
 
-            // Dessin carte
-            if (!otherVehicles[id]) {
-                otherVehicles[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
-                peer.call(id.replace(/\s+/g, '-'), myStream);
+            // Carte
+            if (!otherMarkers[id]) {
+                otherMarkers[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
+                if (myStream) peer.call(id.replace(/\s+/g, '-'), myStream);
             } else {
-                otherVehicles[id].setLatLng([v.lat, v.lon]);
+                otherMarkers[id].setLatLng([v.lat, v.lon]);
             }
 
-            // Calcul Anti-collision
-            if (myCurrentPos) {
+            // Anti-collision
+            if (myPos) {
                 const R = 6371000;
-                const dLat = (v.lat - myCurrentPos.lat) * Math.PI / 180;
-                const dLon = (v.lon - myCurrentPos.lon) * Math.PI / 180;
-                const a = Math.sin(dLat/2)**2 + Math.cos(v.lat*Math.PI/180)*Math.cos(myCurrentPos.lat*Math.PI/180)*Math.sin(dLon/2)**2;
-                if (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) < 50) collisionWarning = true;
+                const dLat = (v.lat - myPos.lat) * Math.PI / 180;
+                const dLon = (v.lon - myPos.lon) * Math.PI / 180;
+                const a = Math.sin(dLat/2)**2 + Math.cos(v.lat*Math.PI/180)*Math.cos(myPos.lat*Math.PI/180)*Math.sin(dLon/2)**2;
+                if (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) < 50) collision = true;
             }
 
             const li = document.createElement('li');
-            li.style.color = v.active ? '#ff4444' : '#3498db';
             li.innerText = (v.active ? "🚨 " : "🚔 ") + id.replace(/_/g, ' ');
             list.appendChild(li);
         }
 
-        // MISE À JOUR VISUELLE DES ALERTES
-        if (unitInAction) {
-            statusBadge.innerText = "🚨 PRISE EN CHARGE : " + unitInAction;
-            statusBadge.classList.add('danger-mode');
-            if(navigator.vibrate) navigator.vibrate([100, 100, 100]);
-        } else if (collisionWarning) {
+        // AFFICHAGE ALERTE GLOBALE SUR TOUS LES TELEPHONES
+        if (pecUnit) {
+            statusBadge.innerText = "🚨 PRISE EN CHARGE : " + pecUnit;
+            statusBadge.className = "status-badge danger-mode";
+        } else if (collision) {
             statusBadge.innerText = "⚠️ PROXIMITÉ CRITIQUE";
-            statusBadge.classList.add('danger-mode');
+            statusBadge.className = "status-badge danger-mode";
+            if(navigator.vibrate) navigator.vibrate(500);
         } else {
             statusBadge.innerText = "ZONE SÉCURISÉE";
-            statusBadge.classList.remove('danger-mode');
+            statusBadge.className = "status-badge";
         }
     });
 
-    // 7. GPS
+    // 5. GPS
     navigator.geolocation.watchPosition((p) => {
-        myCurrentPos = { lat: p.coords.latitude, lon: p.coords.longitude };
-        myMarker.setLatLng([myCurrentPos.lat, myCurrentPos.lon]);
-        map.setView([myCurrentPos.lat, myCurrentPos.lon]);
-        updateDB();
+        myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
+        myMarker.setLatLng([myPos.lat, myPos.lon]);
+        map.setView([myPos.lat, myPos.lon]);
+        pushData();
         db.ref('vehicles/' + myId.replace(/[.#$\[\]]/g, "_")).onDisconnect().remove();
     }, null, { enableHighAccuracy: true });
 
