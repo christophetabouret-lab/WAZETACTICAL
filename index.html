@@ -60,14 +60,13 @@
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false;
 
-    // --- GENERATEUR DE SIGNAL SONORE (BIP) ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playBip() {
         if (audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.type = 'sine'; osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
         gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
         osc.start(); osc.stop(audioCtx.currentTime + 0.15);
     }
@@ -142,44 +141,53 @@
         sendUpdate();
     };
 
+    // LOGIQUE DE RÉCEPTION AVEC NETTOYAGE DES MARQUEURS FANTÔMES
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {};
         const data = root.vehicles || {};
         const lastMsg = root.last_msg || {};
+        const now = Date.now();
         let unitInAction = null;
 
         if (lastMsg.ts && lastMsg.from !== myName) {
             if (!window.lastShownTs || window.lastShownTs !== lastMsg.ts) {
                 window.lastShownTs = lastMsg.ts;
-                playBip(); // JOUE LE BIP
+                playBip();
                 banner.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
                 banner.className = "alert-msg";
-                setTimeout(() => speak(lastMsg.from + " dit " + lastMsg.text), 300); // VOIX
-                setTimeout(() => { banner.className = ""; updateGlobalDisplay(data); }, 7000);
+                setTimeout(() => speak(lastMsg.from + " dit " + lastMsg.text), 300);
+                setTimeout(() => { banner.className = ""; }, 7000);
             }
         }
 
+        // Nettoyage des marqueurs qui n'existent plus en base
+        for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
+
         for (let id in data) {
             const v = data[id];
+            
+            // NETTOYAGE AUTOMATIQUE : Si pas de signal depuis 30s, on ignore
+            if (now - v.ts > 30000) {
+                if (markers[id]) { map.removeLayer(markers[id]); delete markers[id]; }
+                continue; 
+            }
+
             if (v.active) unitInAction = id.replace(/_/g, ' ');
             if (id === myName.replace(/[^a-zA-Z0-9]/g, "_")) continue;
+            
             if (!markers[id]) { markers[id] = L.marker([v.lat, v.lon]).addTo(map); } 
             else { markers[id].setLatLng([v.lat, v.lon]); }
         }
 
-        function updateGlobalDisplay(currentData) {
-            if (banner.className === "alert-msg") return;
-            let actionFound = false;
-            for (let id in currentData) {
-                if (currentData[id].active) {
-                    banner.innerText = "🚨 ALERTE : " + id.replace(/_/g, ' ').toUpperCase();
-                    banner.className = "alert-active";
-                    actionFound = true; break;
-                }
+        if (banner.className !== "alert-msg") {
+            if (unitInAction) {
+                banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
+                banner.className = "alert-active";
+            } else {
+                banner.innerText = "ZONE SÉCURISÉE";
+                banner.className = "";
             }
-            if (!actionFound) { banner.innerText = "ZONE SÉCURISÉE"; banner.className = ""; }
         }
-        updateGlobalDisplay(data);
     });
 
     navigator.geolocation.watchPosition((p) => {
@@ -188,6 +196,17 @@
         if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
         if (isVisible || isPEC) sendUpdate();
     }, null, { enableHighAccuracy: true });
+
+    // Nettoyeur forcé toutes les 5s
+    setInterval(() => {
+        if (banner.className === "alert-active") {
+            db.ref('vehicles').once('value', (s) => {
+                let check = false; const d = s.val() || {};
+                for (let i in d) { if (d[i].active && (Date.now() - d[i].ts < 30000)) check = true; }
+                if (!check) { banner.innerText = "ZONE SÉCURISÉE"; banner.className = ""; }
+            });
+        }
+    }, 5000);
 </script>
 </body>
 </html>
