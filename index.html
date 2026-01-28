@@ -10,12 +10,9 @@
         #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 12px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; }
         #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
         #notification-banner { padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; background: #27ae60; margin-bottom: 10px; font-size: 1.1rem; border: 2px solid transparent; min-height: 25px; transition: background 0.3s; }
-        
         .alert-msg { background: #3498db !important; border: 3px solid white !important; color: white !important; }
         .alert-active { background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate !important; border: 3px solid white !important; }
-        
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.5; } }
-        
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.7rem; }
         #btn-vocal { background: #34495e; } #btn-vocal.on { background: #2ecc71; }
@@ -62,6 +59,18 @@
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false;
+
+    // --- GENERATEUR DE SIGNAL SONORE (BIP) ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playBip() {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine'; osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+    }
 
     document.getElementById('btn-sat').onclick = function() {
         if (!isSat) { map.removeLayer(osm); map.addLayer(sat); this.innerText = "🗺️ VUE ROUTE"; } 
@@ -118,11 +127,11 @@
     }
 
     document.getElementById('btn-signal').onclick = function() {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         isVisible = !isVisible;
         this.classList.toggle('active');
         this.innerText = isVisible ? "✅ DISPOSITIF REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
-        speak(""); 
-        sendUpdate();
+        speak(""); sendUpdate();
     };
 
     document.getElementById('btn-pec').onclick = function() {
@@ -133,25 +142,23 @@
         sendUpdate();
     };
 
-    // LOGIQUE DE RÉCEPTION AVEC ARRÊT AUTOMATIQUE DU CLIGNOTEMENT
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {};
         const data = root.vehicles || {};
         const lastMsg = root.last_msg || {};
         let unitInAction = null;
 
-        // 1. Gestion des messages bleus
         if (lastMsg.ts && lastMsg.from !== myName) {
             if (!window.lastShownTs || window.lastShownTs !== lastMsg.ts) {
                 window.lastShownTs = lastMsg.ts;
+                playBip(); // JOUE LE BIP
                 banner.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
                 banner.className = "alert-msg";
-                speak(lastMsg.from + " dit " + lastMsg.text);
-                setTimeout(() => { banner.className = ""; }, 7000);
+                setTimeout(() => speak(lastMsg.from + " dit " + lastMsg.text), 300); // VOIX
+                setTimeout(() => { banner.className = ""; updateGlobalDisplay(data); }, 7000);
             }
         }
 
-        // 2. Mise à jour des marqueurs et détection PEC
         for (let id in data) {
             const v = data[id];
             if (v.active) unitInAction = id.replace(/_/g, ' ');
@@ -160,16 +167,19 @@
             else { markers[id].setLatLng([v.lat, v.lon]); }
         }
 
-        // 3. Gestion du bandeau d'alerte (Vert/Rouge)
-        if (banner.className !== "alert-msg") {
-            if (unitInAction) {
-                banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
-                banner.className = "alert-active";
-            } else {
-                banner.innerText = "ZONE SÉCURISÉE";
-                banner.className = ""; // Repasse en vert (style par défaut)
+        function updateGlobalDisplay(currentData) {
+            if (banner.className === "alert-msg") return;
+            let actionFound = false;
+            for (let id in currentData) {
+                if (currentData[id].active) {
+                    banner.innerText = "🚨 ALERTE : " + id.replace(/_/g, ' ').toUpperCase();
+                    banner.className = "alert-active";
+                    actionFound = true; break;
+                }
             }
+            if (!actionFound) { banner.innerText = "ZONE SÉCURISÉE"; banner.className = ""; }
         }
+        updateGlobalDisplay(data);
     });
 
     navigator.geolocation.watchPosition((p) => {
