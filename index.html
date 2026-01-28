@@ -8,7 +8,6 @@
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
         
-        /* TITRE CENTRÉ 80% */
         #main-title {
             width: 80%; margin: 10px auto; text-align: center;
             padding: 12px; border: 2px solid #e74c3c; color: #e74c3c;
@@ -87,7 +86,8 @@
     idInput.value = myName;
 
     // --- CARTOGRAPHIE ---
-    const map = L.map('map', { zoomControl: false }).setView([48.8566, 2.3522], 15);
+    // On initialise sans vue fixe, le GPS s'en chargera
+    const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
     
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
@@ -110,6 +110,7 @@
     let isVisible = false;
     let isPEC = false;
     let myStream = null;
+    let firstFix = true; // Pour le recadrage automatique au démarrage
     const markers = {};
     const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
     const banner = document.getElementById('notification-banner');
@@ -206,12 +207,22 @@
         }
     });
 
+    // --- GPS AMÉLIORÉ ---
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
+        
+        // AU TOUT PREMIER ALLUMAGE : On centre la carte sur soi
+        if (firstFix) {
+            map.setView([myPos.lat, myPos.lon], 17);
+            firstFix = false;
+        }
+
         if (isVisible) sendUpdate();
         db.ref('vehicles/' + myName.replace(/[^a-zA-Z0-9]/g, "_")).onDisconnect().remove();
-    }, null, { enableHighAccuracy: true });
+    }, (err) => {
+        alert("Erreur GPS : Veuillez activer la localisation et autoriser le navigateur.");
+    }, { enableHighAccuracy: true });
 </script>
 </body>
 </html>
