@@ -4,13 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>PROJET TCHAT</title>
-    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
         
-        /* Titre Centré 80% de l'écran */
+        /* TITRE CENTRÉ 80% */
         #main-title {
             width: 80%; margin: 10px auto; text-align: center;
             padding: 12px; border: 2px solid #e74c3c; color: #e74c3c;
@@ -18,39 +16,42 @@
             text-transform: uppercase; letter-spacing: 1px;
         }
 
-        #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
+        #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; }
 
-        /* BANDEAU DE NOTIFICATION */
         #notification-banner { 
             padding: 15px; border-radius: 4px; font-weight: bold; text-align: center;
             background: #27ae60; margin-bottom: 10px; font-size: 1.1rem;
             border: 2px solid transparent; transition: all 0.3s;
         }
 
-        /* STYLE ALERTE ROUGE CLIGNOTANTE */
         .alert-active { 
             background: #ff0000 !important; 
             color: #ffffff !important;
             animation: pulse-red 0.5s infinite alternate;
             border: 2px solid #ffffff !important;
         }
+        .alert-test { background: #e67e22 !important; animation: pulse-red 0.5s infinite alternate; }
+
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.6; } }
 
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.8rem; }
+        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
         
+        #btn-vocal { background: #34495e; }
+        #btn-vocal.on { background: #2ecc71; }
         #btn-signal { background: #3498db; }
         #btn-signal.active { background: #2ecc71; }
-        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 8px; height: 50px; font-size: 1rem; }
+        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 8px; height: 45px; font-size: 0.9rem; }
         #btn-pec.active { background: #c0392b; }
+        #btn-test { background: #9b59b6; height: 35px; font-size: 0.65rem; }
+        #btn-sat { background: #2c3e50; height: 35px; font-size: 0.65rem; border: 1px solid #7f8c8d; }
 
         input { 
             width: 100%; padding: 12px; background: #444; border: 1px solid #666; 
             color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; 
-            font-size: 1rem;
         }
         
-        #map { height: calc(100vh - 280px); width: 100%; background: #222; }
+        #map { height: calc(100vh - 350px); width: 100%; background: #222; }
     </style>
 </head>
 <body>
@@ -58,13 +59,14 @@
 <div id="main-title">PROJET TCHAT</div>
 
 <div id="ui-panel">
-    <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ (Ex: ALPHA 1)">
-    
+    <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
     <div id="notification-banner">ZONE SÉCURISÉE</div>
-    
     <div class="btn-grid">
+        <button id="btn-vocal">🎙️ VOCAL : OFF</button>
         <button id="btn-signal">📡 S'AFFICHER : NON</button>
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
+        <button id="btn-test">⚙️ TESTER ALERTE</button>
+        <button id="btn-sat">🗺️ VUE SATELLITE</button>
     </div>
 </div>
 
@@ -72,49 +74,75 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-    // --- 1. CONFIGURATION FIREBASE INTÉGRÉE ---
-    const firebaseConfig = { 
-        databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" 
-    };
-    
+    const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // --- 2. INITIALISATION ---
     const idInput = document.getElementById('user-id');
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
 
+    // --- CARTOGRAPHIE ---
     const map = L.map('map', { zoomControl: false }).setView([48.8566, 2.3522], 15);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+    let isSat = false;
+
+    document.getElementById('btn-sat').onclick = function() {
+        if (!isSat) {
+            map.removeLayer(osm);
+            map.addLayer(sat);
+            this.innerText = "🗺️ VUE ROUTE";
+        } else {
+            map.removeLayer(sat);
+            map.addLayer(osm);
+            this.innerText = "🗺️ VUE SATELLITE";
+        }
+        isSat = !isSat;
+    };
 
     let myPos = null;
     let isVisible = false;
     let isPEC = false;
+    let myStream = null;
     const markers = {};
-    const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MA POSITION");
+    const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
     const banner = document.getElementById('notification-banner');
 
-    // --- 3. SYNCHRONISATION ---
+    // --- TCHAT VOCAL ---
+    const peer = new Peer(myName.replace(/[^a-zA-Z0-9]/g, ""));
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(st => { 
+        myStream = st; myStream.getAudioTracks()[0].enabled = false; 
+    }).catch(() => console.log("Audio bloqué"));
+
+    document.getElementById('btn-vocal').onclick = function() {
+        if(!myStream) return;
+        const active = myStream.getAudioTracks()[0].enabled;
+        myStream.getAudioTracks()[0].enabled = !active;
+        this.innerText = !active ? "🎙️ VOCAL : ON" : "🎙️ VOCAL : OFF";
+        this.classList.toggle('on');
+    };
+
+    peer.on('call', call => {
+        call.answer(myStream);
+        call.on('stream', st => { const audio = new Audio(); audio.srcObject = st; audio.play(); });
+    });
+
     function sendUpdate() {
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
         if (isVisible) {
-            db.ref('vehicles/' + safeId).set({
-                lat: myPos.lat,
-                lon: myPos.lon,
-                active: isPEC,
-                timestamp: Date.now()
-            });
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC });
         } else {
             db.ref('vehicles/' + safeId).remove();
         }
     }
 
-    // --- 4. BOUTONS ---
     document.getElementById('btn-signal').onclick = function() {
         isVisible = !isVisible;
         this.classList.toggle('active');
@@ -129,60 +157,61 @@
         sendUpdate();
     };
 
-    idInput.onchange = function() {
-        db.ref('vehicles/' + myName.replace(/[^a-zA-Z0-9]/g, "_")).remove();
-        myName = this.value;
-        localStorage.setItem('unit_name', myName);
-        sendUpdate();
+    document.getElementById('btn-test').onclick = function() {
+        db.ref('system_test').set({ active: true, from: myName, ts: Date.now() });
+        setTimeout(() => { db.ref('system_test').set({ active: false }); }, 3000);
     };
 
-    // --- 5. ÉCOUTEUR GLOBAL (NOTIFICATION PARTOUT) ---
-    db.ref('vehicles/').on('value', (snapshot) => {
-        const data = snapshot.val() || {};
+    db.ref().on('value', (snapshot) => {
+        const root = snapshot.val() || {};
+        const data = root.vehicles || {};
+        const testSignal = root.system_test || { active: false };
         let unitInAction = null;
+        let collisionAlert = false;
         const safeMyId = myName.replace(/[^a-zA-Z0-9]/g, "_");
 
-        for (let id in markers) {
-            if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
-        }
+        for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
 
         for (let id in data) {
             const v = data[id];
-            
-            // Si quelqu'un active la Prise en Charge
-            if (v.active === true) {
-                unitInAction = id.replace(/_/g, ' ');
-            }
-
+            if (v.active === true) unitInAction = id.replace(/_/g, ' ');
             if (id === safeMyId) continue;
 
             if (!markers[id]) {
                 markers[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
+                if (myStream) peer.call(id.replace(/[^a-zA-Z0-9]/g, ""), myStream);
             } else {
                 markers[id].setLatLng([v.lat, v.lon]);
             }
+
+            if (myPos) {
+                const dist = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
+                if (dist < 50) collisionAlert = true;
+            }
         }
 
-        // MISE À JOUR DU BANDEAU ROUGE SUR TOUS LES APPAREILS
         if (unitInAction) {
-            banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase() + " EN PRISE EN CHARGE";
+            banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
             banner.className = "alert-active";
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        } else if (testSignal.active === true) {
+            banner.innerText = "⚙️ TEST PAR : " + testSignal.from;
+            banner.className = "alert-test";
+        } else if (collisionAlert) {
+            banner.innerText = "⚠️ PROXIMITÉ CRITIQUE";
+            banner.className = "alert-active";
         } else {
             banner.innerText = "ZONE SÉCURISÉE";
             banner.className = "";
         }
     });
 
-    // --- 6. GPS ---
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
-        if (isVisible) { map.panTo([myPos.lat, myPos.lon]); }
-        sendUpdate();
+        if (isVisible) sendUpdate();
         db.ref('vehicles/' + myName.replace(/[^a-zA-Z0-9]/g, "_")).onDisconnect().remove();
     }, null, { enableHighAccuracy: true });
-
 </script>
 </body>
 </html>
