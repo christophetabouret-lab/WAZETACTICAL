@@ -7,61 +7,25 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
-        
-        #main-title {
-            width: 80%; margin: 10px auto; text-align: center;
-            padding: 12px; border: 2px solid #e74c3c; color: #e74c3c;
-            font-weight: bold; background: #2c2c2c; border-radius: 8px;
-            text-transform: uppercase; letter-spacing: 2px;
-        }
-
+        #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 12px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; }
         #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
-
-        #notification-banner { 
-            padding: 15px; border-radius: 4px; font-weight: bold; text-align: center;
-            background: #27ae60; margin-bottom: 10px; font-size: 1.1rem;
-            border: 2px solid transparent; transition: all 0.2s;
-        }
-
-        .alert-active { 
-            background: #ff0000 !important; 
-            color: #ffffff !important;
-            animation: pulse-red 0.5s infinite alternate !important;
-            border: 3px solid #ffffff !important;
-        }
-        
+        #notification-banner { padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; background: #27ae60; margin-bottom: 10px; font-size: 1.1rem; border: 2px solid transparent; min-height: 25px; }
+        .alert-active { background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate !important; border: 3px solid white !important; }
         .alert-msg { background: #3498db !important; border: 2px solid white !important; }
-
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.5; } }
-
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.7rem; }
-        
-        #btn-vocal { background: #34495e; }
-        #btn-vocal.on { background: #2ecc71; }
-        #btn-dict { background: #8e44ad; } /* Bouton Dictée */
-        #btn-signal { background: #3498db; }
-        #btn-signal.active { background: #2ecc71; }
-        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 8px; height: 45px; font-size: 0.9rem; }
-        #btn-pec.active { background: #c0392b; }
-        #btn-test { background: #9b59b6; height: 35px; }
-        #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
-
+        #btn-vocal { background: #34495e; } #btn-vocal.on { background: #2ecc71; }
+        #btn-dict { background: #8e44ad; } #btn-signal { background: #3498db; } #btn-signal.active { background: #2ecc71; }
+        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 8px; height: 45px; } #btn-pec.active { background: #c0392b; }
+        #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; } #btn-test { background: #9b59b6; height: 35px; }
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; }
-        #map { height: calc(100vh - 350px); width: 100%; background: #222; transition: all 0.2s ease-in-out; }
-
-        .proximity-alert {
-            box-shadow: inset 0 0 50px 20px #ff0000 !important;
-            border: 10px solid #ff0000 !important;
-            animation: flash-border 0.4s infinite alternate;
-        }
-        @keyframes flash-border { from { border-color: #ff0000; } to { border-color: #ffffff; } }
+        #map { height: calc(100vh - 350px); width: 100%; background: #222; }
     </style>
 </head>
 <body>
 
 <div id="main-title">TACTICAL DEPLOY</div>
-
 <div id="ui-panel">
     <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
     <div id="notification-banner">ZONE SÉCURISÉE</div>
@@ -74,7 +38,6 @@
         <button id="btn-test">⚙️ TESTER ALERTE</button>
     </div>
 </div>
-
 <div id="map"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -92,56 +55,89 @@
     idInput.value = myName;
 
     const banner = document.getElementById('notification-banner');
-    const mapDiv = document.getElementById('map');
     const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    let myPos = null, isVisible = false, isPEC = false, myStream = null, firstFix = true;
+    let myPos = null, isVisible = false, isPEC = false, myStream = null;
     const markers = {};
 
-    // --- DICTÉE VOCALE (Speech to Text) ---
+    // --- SYNTHÈSE VOCALE (Text to Speech) ---
+    function speak(text) {
+        if (!window.speechSynthesis) return;
+        window.speechSynthesis.cancel(); // Stoppe la lecture en cours
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'fr-FR';
+        utterance.rate = 1.1;
+        window.speechSynthesis.speak(utterance);
+    }
+
+    // --- RECONNAISSANCE VOCALE (Speech to Text) ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
         recognition.lang = 'fr-FR';
-        
+        recognition.continuous = false;
+
         document.getElementById('btn-dict').onclick = () => {
-            recognition.start();
-            banner.innerText = "ÉCOUTE EN COURS...";
+            try { recognition.start(); banner.innerText = "ÉCOUTE EN COURS..."; } catch(e) {}
         };
 
         recognition.onresult = (event) => {
             const msg = event.results[0][0].transcript;
             db.ref('last_msg').set({ from: myName, text: msg, ts: Date.now() });
         };
+        
+        recognition.onerror = () => { banner.innerText = "ERREUR MICRO"; setTimeout(()=> banner.innerText="ZONE SÉCURISÉE", 2000); };
     }
 
-    // --- SYNTHÈSE VOCALE (Text to Speech) ---
-    function speak(text) {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'fr-FR';
-        window.speechSynthesis.speak(utterance);
-    }
-
-    // --- GESTION DU LIVE VOCAL (PeerJS) ---
-    const peer = new Peer(myName.replace(/[^a-zA-Z0-9]/g, ""));
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(st => { 
-        myStream = st; myStream.getAudioTracks()[0].enabled = false; 
-    });
-
-    document.getElementById('btn-vocal').onclick = function() {
-        const active = myStream.getAudioTracks()[0].enabled;
-        myStream.getAudioTracks()[0].enabled = !active;
-        this.innerText = !active ? "🎙️ VOCAL : ON" : "🎙️ VOCAL : OFF";
-        this.classList.toggle('on');
+    // --- BOUTON REJOINDRE (Indispensable pour débloquer l'audio du navigateur) ---
+    document.getElementById('btn-signal').onclick = function() {
+        isVisible = !isVisible;
+        this.classList.toggle('active');
+        this.innerText = isVisible ? "✅ DISPOSITIF REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
+        
+        // Déblocage forcé du son sur mobile au premier clic
+        speak(""); 
+        sendUpdate();
     };
 
-    peer.on('call', call => {
-        call.answer(myStream);
-        call.on('stream', st => { const audio = new Audio(); audio.srcObject = st; audio.play(); });
+    // --- LOGIQUE FIREBASE ---
+    db.ref().on('value', (snapshot) => {
+        const root = snapshot.val() || {};
+        const data = root.vehicles || {};
+        const lastMsg = root.last_msg || {};
+        let unitInAction = null;
+
+        // Gestion du Message Vocal entrant
+        if (lastMsg.ts > (Date.now() - 6000) && lastMsg.from !== myName) {
+            if (!window.lastMsgTs || window.lastMsgTs !== lastMsg.ts) {
+                window.lastMsgTs = lastMsg.ts;
+                banner.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
+                banner.className = "alert-msg";
+                speak(lastMsg.from + " dit " + lastMsg.text);
+                
+                // Le message reste 5 secondes puis on remet l'état normal
+                setTimeout(() => { if(window.lastMsgTs === lastMsg.ts) banner.className = ""; }, 5000);
+            }
+        }
+
+        for (let id in data) {
+            const v = data[id];
+            if (v.active) unitInAction = id.replace(/_/g, ' ');
+            if (id === myName.replace(/[^a-zA-Z0-9]/g, "_")) continue;
+            if (!markers[id]) { markers[id] = L.marker([v.lat, v.lon]).addTo(map); } 
+            else { markers[id].setLatLng([v.lat, v.lon]); }
+        }
+
+        if (unitInAction && banner.className !== "alert-msg") {
+            banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
+            banner.className = "alert-active";
+        } else if (!unitInAction && banner.className !== "alert-msg") {
+            banner.innerText = "ZONE SÉCURISÉE";
+            banner.className = "";
+        }
     });
 
-    // --- SYNC FIREBASE ---
     function sendUpdate() {
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
@@ -149,13 +145,6 @@
             db.ref('vehicles/' + safeId).update({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
         } else { db.ref('vehicles/' + safeId).remove(); }
     }
-
-    document.getElementById('btn-signal').onclick = function() {
-        isVisible = !isVisible;
-        this.classList.toggle('active');
-        this.innerText = isVisible ? "✅ DISPOSITIF REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
-        sendUpdate();
-    };
 
     document.getElementById('btn-pec').onclick = function() {
         isPEC = !isPEC;
@@ -165,51 +154,9 @@
         sendUpdate();
     };
 
-    // --- RÉCEPTION DES DONNÉES ET MESSAGES ---
-    db.ref().on('value', (snapshot) => {
-        const root = snapshot.val() || {};
-        const data = root.vehicles || {};
-        const lastMsg = root.last_msg || {};
-        let unitInAction = null;
-        let collisionAlert = false;
-
-        // Gestion des messages vocaux entrants
-        if (lastMsg.ts > (Date.now() - 5000) && lastMsg.from !== myName) {
-            banner.innerText = lastMsg.from + " : " + lastMsg.text;
-            banner.className = "alert-msg";
-            if (!window.lastRead || window.lastRead !== lastMsg.ts) {
-                speak(lastMsg.from + " dit " + lastMsg.text);
-                window.lastRead = lastMsg.ts;
-            }
-        }
-
-        for (let id in data) {
-            const v = data[id];
-            if (v.active) unitInAction = id.replace(/_/g, ' ');
-            if (id === myName.replace(/[^a-zA-Z0-9]/g, "_")) continue;
-            if (!markers[id]) {
-                markers[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
-                if (myStream) peer.call(id.replace(/[^a-zA-Z0-9]/g, ""), myStream);
-            } else { markers[id].setLatLng([v.lat, v.lon]); }
-            if (myPos && isVisible) {
-                const dist = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
-                if (dist < 500) collisionAlert = true;
-            }
-        }
-
-        if (unitInAction && !banner.className.includes('alert-msg')) {
-            banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
-            banner.className = "alert-active";
-        }
-        
-        if (collisionAlert) mapDiv.classList.add('proximity-alert');
-        else mapDiv.classList.remove('proximity-alert');
-    });
-
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
-        if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
-        sendUpdate();
+        if (isVisible || isPEC) sendUpdate();
     }, null, { enableHighAccuracy: true });
 </script>
 </body>
