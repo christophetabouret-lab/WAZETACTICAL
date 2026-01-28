@@ -69,7 +69,7 @@
     <div id="notification-banner">ZONE SÉCURISÉE</div>
     <div class="btn-grid">
         <button id="btn-vocal">🎙️ VOCAL : OFF</button>
-        <button id="btn-signal">📡 S'AFFICHER : NON</button>
+        <button id="btn-signal">📡 REJOINDRE LE DISPOSITIF</button>
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
         <button id="btn-test">⚙️ TESTER ALERTE</button>
         <button id="btn-sat">🗺️ VUE SATELLITE</button>
@@ -141,7 +141,7 @@
     document.getElementById('btn-signal').onclick = function() {
         isVisible = !isVisible;
         this.classList.toggle('active');
-        this.innerText = isVisible ? "📡 S'AFFICHER : OUI" : "📡 S'AFFICHER : NON";
+        this.innerText = isVisible ? "✅ DISPOSITIF REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
         sendUpdate();
     };
 
@@ -177,7 +177,7 @@
                 if (myStream) peer.call(id.replace(/[^a-zA-Z0-9]/g, ""), myStream);
             } else { markers[id].setLatLng([v.lat, v.lon]); }
 
-            if (myPos) {
+            if (myPos && isVisible) {
                 const dist = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
                 if (dist < 500) collisionAlert = true;
             }
