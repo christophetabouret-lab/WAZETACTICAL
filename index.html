@@ -4,10 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#e74c3c">
-    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Système de Prise en Charge</title>
     
-    <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
@@ -22,7 +20,8 @@
             padding: 10px; border-radius: 4px; font-weight: bold; background: #27ae60; 
             text-align: center; margin-top: 10px; transition: background 0.3s; font-size: 0.9rem;
         }
-        .danger-mode { background: #e74c3c !important; animation: pulse 1s infinite; }
+        /* Animation d'alerte rouge clignotante */
+        .danger-mode { background: #e74c3c !important; animation: pulse 1s infinite; border: 2px solid white; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
         
         #btn-signalement {
@@ -104,6 +103,16 @@
     const iconActive = L.divIcon({className: 'my-unit', html: '🔴', iconSize: [30, 30]});
     const myMarker = L.marker([0, 0], { zIndexOffset: 1000, icon: iconNormal }).addTo(map).bindPopup("MOI");
 
+    function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3;
+        const φ1 = lat1 * Math.PI/180;
+        const φ2 = lat2 * Math.PI/180;
+        const Δφ = (lat2-lat1) * Math.PI/180;
+        const Δλ = (lon2-lon1) * Math.PI/180;
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
     function updatePosition(lat, lon, speed) {
         const safeId = myId.replace(/[.#$\[\]]/g, "_");
         if (isVisibleOnMap) {
@@ -130,16 +139,16 @@
         if(myCurrentPos) updatePosition(myCurrentPos.lat, myCurrentPos.lon, document.getElementById('speed').innerText);
     });
 
-    // ÉCOUTE GLOBALE ET SYNCHRONISATION
+    // ÉCOUTE GLOBALE : PRISE EN CHARGE ET ANTI-COLLISION
     db.ref('vehicles/').on('value', (snapshot) => {
         const data = snapshot.val() || {};
         const unitList = document.getElementById('unit-list');
         unitList.innerHTML = ""; 
         
-        let globalActionFound = false;
-        let activeUnitName = "";
+        let pecActiveGlobal = false;
+        let pecUnitName = "";
+        let collisionProche = false;
 
-        // Nettoyage des marqueurs disparus
         for (let id in otherVehicles) {
             if (!data[id]) { map.removeLayer(otherVehicles[id]); delete otherVehicles[id]; }
         }
@@ -148,17 +157,16 @@
             const safeMyId = myId.replace(/[.#$\[\]]/g, "_");
             const { lat, lon, speed, active } = data[id];
 
-            // Si c'est MOI
             if (id === safeMyId) {
                 myMarker.setIcon(active ? iconActive : iconNormal);
-                if (active) { globalActionFound = true; activeUnitName = "MOI"; }
+                if (active) { pecActiveGlobal = true; pecUnitName = "MOI"; }
                 continue;
             }
             
-            // Si c'est une AUTRE unité
-            const iconMarker = active ? '🔴' : '🚔';
-            if (active) { globalActionFound = true; activeUnitName = id.replace(/_/g, ' '); }
+            if (active) { pecActiveGlobal = true; pecUnitName = id.replace(/_/g, ' '); }
 
+            // Dessiner les autres
+            const iconMarker = active ? '🔴' : '🚔';
             if (!otherVehicles[id]) {
                 otherVehicles[id] = L.marker([lat, lon], {
                     icon: L.divIcon({className: 'other-unit', html: iconMarker, iconSize: [25, 25]})
@@ -168,17 +176,26 @@
                 otherVehicles[id].setIcon(L.divIcon({className: 'other-unit', html: iconMarker, iconSize: [25, 25]}));
             }
 
+            // ANTI-COLLISION (moins de 50m)
+            if (myCurrentPos) {
+                const dist = getDistance(myCurrentPos.lat, myCurrentPos.lon, lat, lon);
+                if (dist < 50) collisionProche = true;
+            }
+
             const li = document.createElement('li');
             li.style.color = active ? '#e74c3c' : '#3498db';
             li.innerText = `${id.replace(/_/g, ' ')} - ${speed} km/h ${active ? '(ACTIF)' : ''}`;
             unitList.appendChild(li);
         }
 
-        // MISE À JOUR DE LA NOTIFICATION GLOBALE SUR TOUS LES ÉCRANS
-        if (globalActionFound) {
-            statusBadge.innerText = "🚨 PRISE EN CHARGE : " + activeUnitName;
+        // GESTION DU MESSAGE DE PRISE EN CHARGE GLOBAL
+        if (pecActiveGlobal) {
+            statusBadge.innerText = "🚨 PRISE EN CHARGE : " + pecUnitName;
             statusBadge.classList.add('danger-mode');
-            if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
+        } else if (collisionProche) {
+            statusBadge.innerText = "⚠️ ANTI-COLLISION : PROXIMITÉ";
+            statusBadge.classList.add('danger-mode');
+            if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
         } else {
             statusBadge.innerText = "ZONE SÉCURISÉE";
             statusBadge.classList.remove('danger-mode');
@@ -192,7 +209,7 @@
             const speed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0;
             myCurrentPos = { lat, lon };
             myMarker.setLatLng([lat, lon]); 
-            map.setView([lat, lon]);
+            map.setView([lat, lon], 16);
             document.getElementById('speed').innerText = speed;
             updatePosition(lat, lon, speed);
             db.ref('vehicles/' + myId.replace(/[.#$\[\]]/g, "_")).onDisconnect().remove();
