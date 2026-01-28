@@ -10,16 +10,29 @@
         #app-container { display: flex; flex-direction: column; height: 100vh; }
         #sidebar { background: #2c2c2c; padding: 10px; border-bottom: 2px solid #e74c3c; z-index: 1000; }
         #map { flex-grow: 1; width: 100%; background: #222; }
-        .status-badge { padding: 10px; border-radius: 4px; font-weight: bold; background: #27ae60; text-align: center; margin-top: 10px; }
-        .danger-mode { background: #e74c3c !important; animation: pulse 1s infinite; border: 2px solid white; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        
+        .status-badge { 
+            padding: 12px; border-radius: 4px; font-weight: bold; background: #27ae60; 
+            text-align: center; margin-top: 10px; font-size: 1rem;
+        }
+        
+        /* Alerte Rouge Flashy */
+        .danger-mode { 
+            background: #ff0000 !important; 
+            color: white !important;
+            animation: flash 0.5s steps(2) infinite; 
+            border: 3px solid white;
+        }
+        @keyframes flash { 0% { opacity: 1; } 50% { opacity: 0.5; } }
+        
         button { width: 100%; padding: 12px; margin-top: 8px; border: none; border-radius: 4px; font-weight: bold; text-transform: uppercase; cursor: pointer; color: white; }
         #btn-vocal { background: #34495e; }
         #btn-vocal.on { background: #2ecc71; }
         #btn-signalement { background: #3498db; }
         #btn-signalement.active { background: #2ecc71; }
         #btn-prise-charge { background: #e67e22; }
-        #btn-prise-charge.active { background: #c0392b; box-shadow: 0 0 15px #e74c3c; }
+        #btn-prise-charge.active { background: #c0392b; }
+        
         #unit-id-input { width: 100%; padding: 8px; background: #444; border: 1px solid #666; color: white; box-sizing: border-box; }
         ul { list-style: none; padding: 0; margin: 10px 0 0 0; max-height: 80px; overflow-y: auto; font-size: 0.8rem; }
         li { padding: 4px; border-bottom: 1px solid #333; }
@@ -47,15 +60,17 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
 <script>
-    // 1. CONFIGURATION
+    // 1. CONFIGURATION FIREBASE
     const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    // 2. IDENTITÉ ET MÉMOIRE
     const idInput = document.getElementById('unit-id-input');
     let myId = localStorage.getItem('unit_name') || "Unité-" + Math.floor(Math.random() * 100);
     idInput.value = myId;
 
+    // 3. CARTE
     const map = L.map('map').setView([48.8566, 2.3522], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
@@ -68,14 +83,14 @@
     const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
     const statusBadge = document.getElementById('main-status');
 
-    // 2. TCHAT VOCAL (PEERJS)
+    // 4. TCHAT VOCAL
     const peer = new Peer(myId.replace(/\s+/g, '-'));
     const btnVocal = document.getElementById('btn-vocal');
 
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         myStream = stream;
         myStream.getAudioTracks()[0].enabled = false;
-    }).catch(err => console.log("Audio non disponible"));
+    }).catch(err => console.warn("Micro bloqué"));
 
     btnVocal.onclick = () => {
         if(!myStream) return;
@@ -93,7 +108,7 @@
         });
     });
 
-    // 3. FONCTIONS DE SYNC
+    // 5. SYNCHRONISATION ET ALERTES
     function updateDB() {
         if (!myCurrentPos) return;
         const safeId = myId.replace(/[.#$\[\]]/g, "_");
@@ -107,7 +122,6 @@
         }
     }
 
-    // 4. ACTIONS BOUTONS
     document.getElementById('btn-signalement').onclick = function() {
         isVisible = !isVisible;
         this.classList.toggle('active');
@@ -118,7 +132,7 @@
     document.getElementById('btn-prise-charge').onclick = function() {
         isPEC = !isPEC;
         this.classList.toggle('active');
-        this.innerText = isPEC ? "EN INTERCEPTION" : "Démarrer Prise en Charge";
+        this.innerText = isPEC ? "STOP PRISE EN CHARGE" : "DÉMARRER PRISE EN CHARGE";
         updateDB();
     };
 
@@ -129,66 +143,65 @@
         updateDB();
     };
 
-    // 5. RÉCEPTION ET ALERTES GLOBALES
+    // 6. ÉCOUTEUR PRINCIPAL (FONCTIONNE POUR TOUS)
     db.ref('vehicles/').on('value', (snap) => {
         const data = snap.val() || {};
         const list = document.getElementById('unit-list');
         list.innerHTML = "";
-        let pecGlobal = "";
-        let collision = false;
+        
+        let unitInAction = null;
+        let collisionWarning = false;
         const safeMyId = myId.replace(/[.#$\[\]]/g, "_");
 
-        // Nettoyer marqueurs
-        for (let id in otherVehicles) {
-            if (!data[id]) { map.removeLayer(otherVehicles[id]); delete otherVehicles[id]; }
-        }
-
+        // Gérer les marqueurs des autres
         for (let id in data) {
             const v = data[id];
             
-            // Vérifier si quelqu'un (soi ou un autre) est en prise en charge
-            if (v.active) { pecGlobal = id.replace(/_/g, ' '); }
+            // Priorité : Si n'importe quelle unité est active dans la base
+            if (v.active === true) {
+                unitInAction = id.replace(/_/g, ' ');
+            }
 
             if (id === safeMyId) continue;
 
-            // Affichage des autres sur la carte
+            // Dessin carte
             if (!otherVehicles[id]) {
                 otherVehicles[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
-                peer.call(id.replace(/\s+/g, '-'), myStream); // Connexion vocale auto
+                peer.call(id.replace(/\s+/g, '-'), myStream);
             } else {
                 otherVehicles[id].setLatLng([v.lat, v.lon]);
             }
 
-            // Anti-collision
+            // Calcul Anti-collision
             if (myCurrentPos) {
                 const R = 6371000;
                 const dLat = (v.lat - myCurrentPos.lat) * Math.PI / 180;
                 const dLon = (v.lon - myCurrentPos.lon) * Math.PI / 180;
                 const a = Math.sin(dLat/2)**2 + Math.cos(v.lat*Math.PI/180)*Math.cos(myCurrentPos.lat*Math.PI/180)*Math.sin(dLon/2)**2;
-                if (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) < 50) collision = true;
+                if (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) < 50) collisionWarning = true;
             }
 
             const li = document.createElement('li');
-            li.style.color = v.active ? '#e74c3c' : 'white';
+            li.style.color = v.active ? '#ff4444' : '#3498db';
             li.innerText = (v.active ? "🚨 " : "🚔 ") + id.replace(/_/g, ' ');
             list.appendChild(li);
         }
 
-        // MISE À JOUR DU STATUT SUR TOUS LES APPAREILS
-        if (pecGlobal !== "") {
-            statusBadge.innerText = "🚨 PRISE EN CHARGE : " + pecGlobal;
-            statusBadge.className = "status-badge danger-mode";
-        } else if (collision) {
+        // MISE À JOUR VISUELLE DES ALERTES
+        if (unitInAction) {
+            statusBadge.innerText = "🚨 PRISE EN CHARGE : " + unitInAction;
+            statusBadge.classList.add('danger-mode');
+            if(navigator.vibrate) navigator.vibrate([100, 100, 100]);
+        } else if (collisionWarning) {
             statusBadge.innerText = "⚠️ PROXIMITÉ CRITIQUE";
-            statusBadge.className = "status-badge danger-mode";
-            if(navigator.vibrate) navigator.vibrate(500);
+            statusBadge.classList.add('danger-mode');
         } else {
             statusBadge.innerText = "ZONE SÉCURISÉE";
-            statusBadge.className = "status-badge";
+            statusBadge.classList.remove('danger-mode');
         }
     });
 
-    // 6. GEOLOCALISATION
+    // 7. GPS
     navigator.geolocation.watchPosition((p) => {
         myCurrentPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myCurrentPos.lat, myCurrentPos.lon]);
