@@ -9,12 +9,11 @@
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
         #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 12px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; }
         #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
-        #notification-banner { padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; background: #27ae60; margin-bottom: 10px; font-size: 1.1rem; border: 2px solid transparent; min-height: 25px; }
+        #notification-banner { padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; background: #27ae60; margin-bottom: 10px; font-size: 1.1rem; border: 2px solid transparent; min-height: 25px; transition: background 0.3s; }
         
-        /* BANDEAU MESSAGE BLEU PRIORITAIRE */
-        .alert-msg { background: #3498db !important; border: 3px solid white !important; color: white !important; animation: none !important; }
-        
+        .alert-msg { background: #3498db !important; border: 3px solid white !important; color: white !important; }
         .alert-active { background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate !important; border: 3px solid white !important; }
+        
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.5; } }
         
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -122,7 +121,7 @@
         isVisible = !isVisible;
         this.classList.toggle('active');
         this.innerText = isVisible ? "✅ DISPOSITIF REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
-        speak(""); // Débloque l'audio
+        speak(""); 
         sendUpdate();
     };
 
@@ -134,28 +133,25 @@
         sendUpdate();
     };
 
-    // LOGIQUE DE RÉCEPTION CORRIGÉE
+    // LOGIQUE DE RÉCEPTION AVEC ARRÊT AUTOMATIQUE DU CLIGNOTEMENT
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {};
         const data = root.vehicles || {};
         const lastMsg = root.last_msg || {};
         let unitInAction = null;
 
-        // Détection du message (plus fiable)
+        // 1. Gestion des messages bleus
         if (lastMsg.ts && lastMsg.from !== myName) {
             if (!window.lastShownTs || window.lastShownTs !== lastMsg.ts) {
                 window.lastShownTs = lastMsg.ts;
                 banner.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
                 banner.className = "alert-msg";
                 speak(lastMsg.from + " dit " + lastMsg.text);
-                
-                // On laisse le message 7 secondes
-                setTimeout(() => { 
-                    window.dispatchEvent(new Event('refreshUI')); 
-                }, 7000);
+                setTimeout(() => { banner.className = ""; }, 7000);
             }
         }
 
+        // 2. Mise à jour des marqueurs et détection PEC
         for (let id in data) {
             const v = data[id];
             if (v.active) unitInAction = id.replace(/_/g, ' ');
@@ -164,24 +160,16 @@
             else { markers[id].setLatLng([v.lat, v.lon]); }
         }
 
-        // Fonction pour rafraîchir l'affichage sans écraser le message bleu
-        const refreshDisplay = () => {
-            if (banner.className === "alert-msg") return; 
+        // 3. Gestion du bandeau d'alerte (Vert/Rouge)
+        if (banner.className !== "alert-msg") {
             if (unitInAction) {
                 banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
                 banner.className = "alert-active";
             } else {
                 banner.innerText = "ZONE SÉCURISÉE";
-                banner.className = "";
+                banner.className = ""; // Repasse en vert (style par défaut)
             }
-        };
-
-        window.addEventListener('refreshUI', () => {
-            banner.className = "";
-            refreshDisplay();
-        }, { once: true });
-
-        refreshDisplay();
+        }
     });
 
     navigator.geolocation.watchPosition((p) => {
