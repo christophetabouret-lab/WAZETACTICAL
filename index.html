@@ -54,10 +54,6 @@
             background: #444; border: 1px solid #666; color: white; padding: 8px;
             border-radius: 4px; width: 100%; margin-top: 5px; box-sizing: border-box; font-size: 0.9rem;
         }
-        @media (min-width: 768px) {
-            #app-container { flex-direction: row; }
-            #sidebar { width: 300px; height: 100vh; max-height: 100vh; border-bottom: none; border-right: 2px solid #e74c3c; }
-        }
     </style>
 </head>
 <body>
@@ -104,6 +100,8 @@
     const peer = new Peer(myId.replace(/\s+/g, '-'));
     const btnVocal = document.getElementById('btn-vocal');
     const btnSignalement = document.getElementById('btn-signalement');
+    const btnPriseCharge = document.getElementById('btn-prise-charge');
+    const statusBadge = document.getElementById('main-status');
 
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         myStream = stream;
@@ -126,6 +124,12 @@
         });
     });
 
+    // Icônes personnalisées pour SOI-MÊME
+    const iconNormal = L.divIcon({className: 'my-unit', html: '🚔', iconSize: [30, 30]});
+    const iconActive = L.divIcon({className: 'my-unit', html: '🔴', iconSize: [30, 30]});
+    const myMarker = L.marker([0, 0], { zIndexOffset: 1000, icon: iconNormal }).addTo(map).bindPopup("MOI");
+    const safetyZone = L.circle([0, 0], { color: '#3498db', radius: 100 }).addTo(map);
+
     function updatePosition(lat, lon, speed) {
         const safeId = myId.replace(/[.#$\[\]]/g, "_");
         if (isVisibleOnMap) {
@@ -142,6 +146,25 @@
         if(myCurrentPos) updatePosition(myCurrentPos.lat, myCurrentPos.lon, document.getElementById('speed').innerText);
     });
 
+    btnPriseCharge.addEventListener('click', function() {
+        isActionActive = !isActionActive;
+        this.classList.toggle('active');
+        this.innerText = isActionActive ? "En cours de Prise en Charge" : "Démarrer Prise en Charge";
+        
+        // NOTIFICATION VISUELLE IMMEDIATE POUR L'INTERVENANT
+        if(isActionActive) {
+            statusBadge.innerText = "🚨 PRISE EN CHARGE ACTIVE";
+            statusBadge.classList.add('danger-mode');
+            myMarker.setIcon(iconActive); // Devient rouge sur sa propre carte
+        } else {
+            statusBadge.innerText = "ZONE SÉCURISÉE";
+            statusBadge.classList.remove('danger-mode');
+            myMarker.setIcon(iconNormal); // Repasse en bleu/normal
+        }
+        
+        if(myCurrentPos) updatePosition(myCurrentPos.lat, myCurrentPos.lon, document.getElementById('speed').innerText);
+    });
+
     idInput.addEventListener('change', () => {
         const oldId = myId.replace(/[.#$\[\]]/g, "_");
         myId = idInput.value.trim() || "Anonyme";
@@ -150,19 +173,11 @@
         if(myCurrentPos) updatePosition(myCurrentPos.lat, myCurrentPos.lon, document.getElementById('speed').innerText);
     });
 
-    document.getElementById('btn-prise-charge').addEventListener('click', function() {
-        isActionActive = !isActionActive;
-        this.classList.toggle('active');
-        this.innerText = isActionActive ? "En cours de Prise en Charge" : "Démarrer Prise en Charge";
-        if(myCurrentPos) updatePosition(myCurrentPos.lat, myCurrentPos.lon, document.getElementById('speed').innerText);
-    });
-
     db.ref('vehicles/').on('value', (snapshot) => {
         const data = snapshot.val();
         const unitList = document.getElementById('unit-list');
-        const statusBadge = document.getElementById('main-status');
         unitList.innerHTML = ""; 
-        let collisionAlert = false;
+        let proximityAlert = false;
 
         for (let id in data) {
             if (id === myId.replace(/[.#$\[\]]/g, "_")) continue;
@@ -183,7 +198,7 @@
                 const R = 6371e3;
                 const a = Math.sin(((lat-myCurrentPos.lat)*Math.PI/180)/2)**2 + Math.cos(myCurrentPos.lat*Math.PI/180)*Math.cos(lat*Math.PI/180)*Math.sin(((lon-myCurrentPos.lon)*Math.PI/180)/2)**2;
                 const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                if (dist < 100) collisionAlert = true;
+                if (dist < 100) proximityAlert = true;
             }
 
             const li = document.createElement('li');
@@ -192,16 +207,12 @@
             unitList.appendChild(li);
         }
 
-        if (collisionAlert) {
-            statusBadge.innerText = "⚠️ PROXIMITÉ CRITIQUE"; statusBadge.classList.add('danger-mode');
-            if ("vibrate" in navigator) navigator.vibrate(500);
-        } else {
-            statusBadge.innerText = "ZONE SÉCURISÉE"; statusBadge.classList.remove('danger-mode');
+        // Si une AUTRE unité est en danger à côté de moi
+        if (proximityAlert && !isActionActive) {
+            statusBadge.innerText = "⚠️ PROXIMITÉ CRITIQUE";
+            statusBadge.classList.add('danger-mode');
         }
     });
-
-    const myMarker = L.marker([0, 0], { zIndexOffset: 1000 }).addTo(map).bindPopup("MOI");
-    const safetyZone = L.circle([0, 0], { color: '#3498db', radius: 100 }).addTo(map);
 
     if ("geolocation" in navigator) {
         navigator.geolocation.watchPosition((position) => {
