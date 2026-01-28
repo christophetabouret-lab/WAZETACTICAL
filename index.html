@@ -13,7 +13,7 @@
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
         #app-container { display: flex; flex-direction: column; height: 100vh; }
         #sidebar { 
-            width: 100%; max-height: 40%; background: #2c2c2c; padding: 15px; 
+            width: 100%; max-height: 45%; background: #2c2c2c; padding: 15px; 
             border-bottom: 2px solid #e74c3c; z-index: 1000; display: flex; 
             flex-direction: column; box-sizing: border-box; overflow-y: auto; 
         }
@@ -24,17 +24,27 @@
         }
         .danger-mode { background: #e74c3c !important; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        
+        #btn-signalement {
+            background: #3498db; color: white; border: none; padding: 12px;
+            font-weight: bold; cursor: pointer; border-radius: 4px; margin-top: 10px;
+            text-transform: uppercase; font-size: 0.8rem;
+        }
+        #btn-signalement.active { background: #2980b9; box-shadow: inset 0 0 10px #000; border: 1px solid white; }
+
         #btn-prise-charge {
             background: #e67e22; color: white; border: none; padding: 12px;
             font-weight: bold; cursor: pointer; border-radius: 4px; margin-top: 10px;
             text-transform: uppercase; font-size: 0.8rem;
         }
         #btn-prise-charge.active { background: #c0392b; box-shadow: 0 0 15px #e74c3c; }
+        
         #btn-vocal {
             background: #34495e; color: white; border: none; padding: 10px;
             margin-top: 10px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 0.8rem;
         }
         #btn-vocal.on { background: #2ecc71; }
+        
         h2 { color: #e74c3c; text-transform: uppercase; font-size: 1rem; margin: 0; }
         h3 { font-size: 0.9rem; color: #bdc3c7; margin: 10px 0 5px 0; }
         hr { border: 0; border-top: 1px solid #444; margin: 10px 0; }
@@ -58,6 +68,7 @@
         <input type="text" id="unit-id-input" placeholder="Nom de l'Unité">
         <p style="margin: 5px 0; font-size: 0.9rem;"><strong>Vitesse :</strong> <span id="speed">0</span> km/h</p>
         <button id="btn-vocal">Micro : OFF</button>
+        <button id="btn-signalement">S'afficher sur la carte</button>
         <button id="btn-prise-charge">Démarrer Prise en Charge</button>
         <div id="main-status" class="status-badge">ZONE SÉCURISÉE</div>
         <hr>
@@ -69,43 +80,35 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
 <script>
-    // --- Initialisation Firebase Compat ---
     const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // --- Configuration PWA ---
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js'); });
-    }
-
-    // --- Variables Globales ---
     const idInput = document.getElementById('unit-id-input');
     let myId = localStorage.getItem('unit_name') || "Unité-" + Math.floor(Math.random() * 1000);
     idInput.value = myId;
 
-    // --- Carte immédiate ---
     const map = L.map('map').setView([48.8566, 2.3522], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     const otherVehicles = {};
     let myCurrentPos = null;
     let isActionActive = false;
+    let isVisibleOnMap = false;
     let myStream;
 
-    // --- Logique Vocale ---
     const peer = new Peer(myId.replace(/\s+/g, '-'));
     const btnVocal = document.getElementById('btn-vocal');
+    const btnSignalement = document.getElementById('btn-signalement');
 
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         myStream = stream;
         myStream.getAudioTracks()[0].enabled = false;
-    }).catch(err => console.log("Attente autorisation micro"));
+    }).catch(err => console.log("Micro en attente"));
 
     btnVocal.addEventListener('click', () => {
         if(!myStream) return;
@@ -123,20 +126,24 @@
         });
     });
 
-    // --- Fonctions Utilitaires ---
     function updatePosition(lat, lon, speed) {
-        db.ref('vehicles/' + myId).set({ lat, lon, speed, active: isActionActive });
+        const safeId = myId.replace(/[.#$\[\]]/g, "_");
+        if (isVisibleOnMap) {
+            db.ref('vehicles/' + safeId).set({ lat, lon, speed, active: isActionActive, timestamp: Date.now() });
+        } else {
+            db.ref('vehicles/' + safeId).remove();
+        }
     }
 
-    function getDistance(lat1, lon1, lat2, lon2) {
-        const R = 6371e3;
-        const a = Math.sin(((lat2-lat1)*Math.PI/180)/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(((lon2-lon1)*Math.PI/180)/2)**2;
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
+    btnSignalement.addEventListener('click', function() {
+        isVisibleOnMap = !isVisibleOnMap;
+        this.classList.toggle('active');
+        this.innerText = isVisibleOnMap ? "Signalement : ACTIF" : "S'afficher sur la carte";
+        if(myCurrentPos) updatePosition(myCurrentPos.lat, myCurrentPos.lon, document.getElementById('speed').innerText);
+    });
 
-    // --- Événements ---
     idInput.addEventListener('change', () => {
-        const oldId = myId;
+        const oldId = myId.replace(/[.#$\[\]]/g, "_");
         myId = idInput.value.trim() || "Anonyme";
         localStorage.setItem('unit_name', myId);
         db.ref('vehicles/' + oldId).remove();
@@ -150,7 +157,6 @@
         if(myCurrentPos) updatePosition(myCurrentPos.lat, myCurrentPos.lon, document.getElementById('speed').innerText);
     });
 
-    // --- Surveillance Database ---
     db.ref('vehicles/').on('value', (snapshot) => {
         const data = snapshot.val();
         const unitList = document.getElementById('unit-list');
@@ -159,22 +165,27 @@
         let collisionAlert = false;
 
         for (let id in data) {
-            if (id === myId) continue;
+            if (id === myId.replace(/[.#$\[\]]/g, "_")) continue;
+            
             const { lat, lon, speed, active } = data[id];
             const iconMarker = active ? '🔴' : '🚔';
             
             if (!otherVehicles[id]) {
-                otherVehicles[id] = L.marker([lat, lon], {icon: L.divIcon({className: 'other-unit', html: iconMarker, iconSize: [20, 20]})}).addTo(map).bindPopup(id);
-                peer.call(id.replace(/\s+/g, '-'), myStream);
+                otherVehicles[id] = L.marker([lat, lon], {
+                    icon: L.divIcon({className: 'other-unit', html: iconMarker, iconSize: [25, 25]})
+                }).addTo(map).bindPopup(id);
             } else {
                 otherVehicles[id].setLatLng([lat, lon]);
-                otherVehicles[id].setIcon(L.divIcon({className: 'other-unit', html: iconMarker, iconSize: [20, 20]}));
+                otherVehicles[id].setIcon(L.divIcon({className: 'other-unit', html: iconMarker, iconSize: [25, 25]}));
             }
 
             if (myCurrentPos) {
-                const dist = getDistance(myCurrentPos.lat, myCurrentPos.lon, lat, lon);
+                const R = 6371e3;
+                const a = Math.sin(((lat-myCurrentPos.lat)*Math.PI/180)/2)**2 + Math.cos(myCurrentPos.lat*Math.PI/180)*Math.cos(lat*Math.PI/180)*Math.sin(((lon-myCurrentPos.lon)*Math.PI/180)/2)**2;
+                const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
                 if (dist < 100) collisionAlert = true;
             }
+
             const li = document.createElement('li');
             li.style.color = active ? '#e74c3c' : 'white';
             li.innerText = `${id} - ${speed} km/h ${active ? '(ACTIF)' : ''}`;
@@ -189,7 +200,6 @@
         }
     });
 
-    // --- Géolocalisation ---
     const myMarker = L.marker([0, 0], { zIndexOffset: 1000 }).addTo(map).bindPopup("MOI");
     const safetyZone = L.circle([0, 0], { color: '#3498db', radius: 100 }).addTo(map);
 
@@ -199,11 +209,12 @@
             const lon = position.coords.longitude;
             const speed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0;
             myCurrentPos = { lat, lon };
-            myMarker.setLatLng([lat, lon]); safetyZone.setLatLng([lat, lon]); map.setView([lat, lon]);
+            myMarker.setLatLng([lat, lon]); 
+            safetyZone.setLatLng([lat, lon]); 
+            map.setView([lat, lon]);
             document.getElementById('speed').innerText = speed;
             updatePosition(lat, lon, speed);
-            db.ref('vehicles/' + myId).onDisconnect().remove();
-        }, (err) => { console.error("GPS Erreur:", err) }, { enableHighAccuracy: true });
+        }, null, { enableHighAccuracy: true });
     }
 </script>
 </body>
