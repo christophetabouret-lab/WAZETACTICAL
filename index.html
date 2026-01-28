@@ -20,18 +20,21 @@
         #notification-banner { 
             padding: 15px; border-radius: 4px; font-weight: bold; text-align: center;
             background: #27ae60; margin-bottom: 10px; font-size: 1.1rem;
-            border: 2px solid transparent; transition: all 0.3s;
+            border: 2px solid transparent; transition: all 0.2s;
         }
 
+        /* NOTIFICATION ROUGE : FORCEE */
         .alert-active { 
             background: #ff0000 !important; 
             color: #ffffff !important;
-            animation: pulse-red 0.5s infinite alternate;
-            border: 2px solid #ffffff !important;
+            animation: pulse-red 0.5s infinite alternate !important;
+            border: 3px solid #ffffff !important;
+            display: block !important;
         }
+        
         .alert-test { background: #e67e22 !important; animation: pulse-red 0.5s infinite alternate; }
 
-        @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.6; } }
+        @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.5; } }
 
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
@@ -113,7 +116,9 @@
     const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
     const banner = document.getElementById('notification-banner');
 
-    const peer = new Peer(myName.replace(/[^a-zA-Z0-9]/g, ""));
+    const peerId = myName.replace(/[^a-zA-Z0-9]/g, "");
+    const peer = new Peer(peerId);
+    
     navigator.mediaDevices.getUserMedia({ audio: true }).then(st => { 
         myStream = st; myStream.getAudioTracks()[0].enabled = false; 
     }).catch(() => console.log("Audio bloqué"));
@@ -134,8 +139,11 @@
     function sendUpdate() {
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
-        if (isVisible) { db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC }); } 
-        else { db.ref('vehicles/' + safeId).remove(); }
+        if (isVisible) {
+            db.ref('vehicles/' + safeId).update({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
+        } else {
+            db.ref('vehicles/' + safeId).remove();
+        }
     }
 
     document.getElementById('btn-signal').onclick = function() {
@@ -149,7 +157,7 @@
         isPEC = !isPEC;
         this.classList.toggle('active');
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        sendUpdate();
+        sendUpdate(); // Force l'envoi immédiat de l'état active
     };
 
     document.getElementById('btn-test').onclick = function() {
@@ -157,6 +165,7 @@
         setTimeout(() => { db.ref('system_test').set({ active: false }); }, 3000);
     };
 
+    // ECOUTEUR DE NOTIFICATION - BLINDAGE
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {};
         const data = root.vehicles || {};
@@ -169,7 +178,12 @@
 
         for (let id in data) {
             const v = data[id];
-            if (v.active === true) unitInAction = id.replace(/_/g, ' ');
+            
+            // ANALYSE DE CHAQUE UNITE POUR L'ALERTE PEC
+            if (v.active === true) {
+                unitInAction = id.replace(/_/g, ' ');
+            }
+
             if (id === safeMyId) continue;
 
             if (!markers[id]) {
@@ -183,24 +197,21 @@
             }
         }
 
+        // MISE À JOUR BANDEAU ROUGE
         if (unitInAction) {
             banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
-            banner.className = "notification-banner alert-active";
+            banner.className = "alert-active";
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
         } else if (testSignal.active === true) {
             banner.innerText = "⚙️ TEST PAR : " + testSignal.from;
-            banner.className = "notification-banner alert-test";
+            banner.className = "alert-test";
         } else {
             banner.innerText = "ZONE SÉCURISÉE";
-            banner.className = "notification-banner";
+            banner.className = "";
         }
 
-        if (collisionAlert) {
-            mapDiv.classList.add('proximity-alert');
-            if (navigator.vibrate) navigator.vibrate([500, 100, 500]);
-        } else {
-            mapDiv.classList.remove('proximity-alert');
-        }
+        if (collisionAlert) { mapDiv.classList.add('proximity-alert'); } 
+        else { mapDiv.classList.remove('proximity-alert'); }
     });
 
     navigator.geolocation.watchPosition((p) => {
