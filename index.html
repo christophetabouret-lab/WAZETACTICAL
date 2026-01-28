@@ -10,9 +10,13 @@
         #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 12px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; }
         #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
         #notification-banner { padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; background: #27ae60; margin-bottom: 10px; font-size: 1.1rem; border: 2px solid transparent; min-height: 25px; }
+        
+        /* BANDEAU MESSAGE BLEU PRIORITAIRE */
+        .alert-msg { background: #3498db !important; border: 3px solid white !important; color: white !important; animation: none !important; }
+        
         .alert-active { background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate !important; border: 3px solid white !important; }
-        .alert-msg { background: #3498db !important; border: 2px solid white !important; }
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.5; } }
+        
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.7rem; }
         #btn-vocal { background: #34495e; } #btn-vocal.on { background: #2ecc71; }
@@ -118,7 +122,7 @@
         isVisible = !isVisible;
         this.classList.toggle('active');
         this.innerText = isVisible ? "✅ DISPOSITIF REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
-        speak(""); 
+        speak(""); // Débloque l'audio
         sendUpdate();
     };
 
@@ -130,19 +134,25 @@
         sendUpdate();
     };
 
+    // LOGIQUE DE RÉCEPTION CORRIGÉE
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {};
         const data = root.vehicles || {};
         const lastMsg = root.last_msg || {};
         let unitInAction = null;
 
-        if (lastMsg.ts > (Date.now() - 6000) && lastMsg.from !== myName) {
-            if (!window.lastMsgTs || window.lastMsgTs !== lastMsg.ts) {
-                window.lastMsgTs = lastMsg.ts;
+        // Détection du message (plus fiable)
+        if (lastMsg.ts && lastMsg.from !== myName) {
+            if (!window.lastShownTs || window.lastShownTs !== lastMsg.ts) {
+                window.lastShownTs = lastMsg.ts;
                 banner.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
                 banner.className = "alert-msg";
                 speak(lastMsg.from + " dit " + lastMsg.text);
-                setTimeout(() => { if(window.lastMsgTs === lastMsg.ts) banner.className = ""; }, 5000);
+                
+                // On laisse le message 7 secondes
+                setTimeout(() => { 
+                    window.dispatchEvent(new Event('refreshUI')); 
+                }, 7000);
             }
         }
 
@@ -154,22 +164,30 @@
             else { markers[id].setLatLng([v.lat, v.lon]); }
         }
 
-        if (unitInAction && banner.className !== "alert-msg") {
-            banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
-            banner.className = "alert-active";
-        } else if (!unitInAction && banner.className !== "alert-msg") {
-            banner.innerText = "ZONE SÉCURISÉE";
+        // Fonction pour rafraîchir l'affichage sans écraser le message bleu
+        const refreshDisplay = () => {
+            if (banner.className === "alert-msg") return; 
+            if (unitInAction) {
+                banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
+                banner.className = "alert-active";
+            } else {
+                banner.innerText = "ZONE SÉCURISÉE";
+                banner.className = "";
+            }
+        };
+
+        window.addEventListener('refreshUI', () => {
             banner.className = "";
-        }
+            refreshDisplay();
+        }, { once: true });
+
+        refreshDisplay();
     });
 
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
-        if (firstFix) { 
-            map.setView([myPos.lat, myPos.lon], 17); // Rétablit le zoom précis au démarrage
-            firstFix = false; 
-        }
+        if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
         if (isVisible || isPEC) sendUpdate();
     }, null, { enableHighAccuracy: true });
 </script>
