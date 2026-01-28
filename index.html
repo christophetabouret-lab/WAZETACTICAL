@@ -23,7 +23,6 @@
             border: 2px solid transparent; transition: all 0.2s;
         }
 
-        /* NOTIFICATION ROUGE : FORCEE */
         .alert-active { 
             background: #ff0000 !important; 
             color: #ffffff !important;
@@ -139,7 +138,8 @@
     function sendUpdate() {
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
-        if (isVisible) {
+        // Modification : On envoie si on a rejoint OU si on est en PEC
+        if (isVisible || isPEC) {
             db.ref('vehicles/' + safeId).update({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
         } else {
             db.ref('vehicles/' + safeId).remove();
@@ -157,7 +157,16 @@
         isPEC = !isPEC;
         this.classList.toggle('active');
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        sendUpdate(); // Force l'envoi immédiat de l'état active
+        
+        // Sécurité : Si on lance une PEC sans avoir rejoint, on force la visibilité visuelle du bouton
+        if (isPEC && !isVisible) {
+            isVisible = true;
+            const btnJoin = document.getElementById('btn-signal');
+            btnJoin.classList.add('active');
+            btnJoin.innerText = "✅ DISPOSITIF REJOINT";
+        }
+        
+        sendUpdate();
     };
 
     document.getElementById('btn-test').onclick = function() {
@@ -165,7 +174,6 @@
         setTimeout(() => { db.ref('system_test').set({ active: false }); }, 3000);
     };
 
-    // ECOUTEUR DE NOTIFICATION - BLINDAGE
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {};
         const data = root.vehicles || {};
@@ -178,12 +186,7 @@
 
         for (let id in data) {
             const v = data[id];
-            
-            // ANALYSE DE CHAQUE UNITE POUR L'ALERTE PEC
-            if (v.active === true) {
-                unitInAction = id.replace(/_/g, ' ');
-            }
-
+            if (v.active === true) unitInAction = id.replace(/_/g, ' ');
             if (id === safeMyId) continue;
 
             if (!markers[id]) {
@@ -197,7 +200,6 @@
             }
         }
 
-        // MISE À JOUR BANDEAU ROUGE
         if (unitInAction) {
             banner.innerText = "🚨 ALERTE : " + unitInAction.toUpperCase();
             banner.className = "alert-active";
@@ -218,7 +220,7 @@
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
         if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
-        if (isVisible) sendUpdate();
+        if (isVisible || isPEC) sendUpdate();
         db.ref('vehicles/' + myName.replace(/[^a-zA-Z0-9]/g, "_")).onDisconnect().remove();
     }, null, { enableHighAccuracy: true });
 </script>
