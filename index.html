@@ -3,28 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>PEC TACTIQUE</title>
+    <title>SYSTÈME TACTIQUE</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
-        #app-container { display: flex; flex-direction: column; height: 100vh; }
         #sidebar { background: #2c2c2c; padding: 10px; border-bottom: 3px solid #e74c3c; z-index: 1000; }
-        #map { flex-grow: 1; width: 100%; background: #222; }
+        #map { height: calc(100vh - 160px); width: 100%; background: #222; }
         
+        /* BANDEAU DE NOTIFICATION SURVITAMINÉ */
         .status-badge { 
             padding: 12px; border-radius: 4px; font-weight: bold; background: #27ae60; 
-            text-align: center; margin-top: 10px; font-size: 1rem; border: 2px solid transparent;
+            text-align: center; margin-top: 10px; font-size: 1.1rem; border: 2px solid transparent;
         }
         
-        /* ALERTE ROUGE CRITIQUE */
         .danger-mode { 
             background: #ff0000 !important; 
-            animation: blinker 0.6s linear infinite; 
-            border: 2px solid white;
+            animation: flash-critique 0.4s steps(2) infinite; 
+            border: 3px solid #ffffff !important;
+            color: white !important;
+            box-shadow: 0 0 20px #ff0000;
         }
-        @keyframes blinker { 50% { opacity: 0.3; } }
+        @keyframes flash-critique { 0% { background: #ff0000; } 100% { background: #000000; } }
         
-        button { width: 100%; padding: 12px; margin-top: 8px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; }
+        button { width: 100%; padding: 12px; margin-top: 5px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; }
         #btn-vocal { background: #34495e; }
         #btn-vocal.on { background: #2ecc71; }
         #btn-signal { background: #3498db; }
@@ -32,26 +33,24 @@
         #btn-pec { background: #e67e22; }
         #btn-pec.active { background: #c0392b; }
         
-        input { width: 100%; padding: 8px; background: #444; border: 1px solid #666; color: white; box-sizing: border-box; }
-        ul { list-style: none; padding: 0; margin: 10px 0 0 0; max-height: 80px; overflow-y: auto; font-size: 0.8rem; }
-        li { padding: 5px; border-bottom: 1px solid #333; }
+        input { width: 100%; padding: 10px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 5px; box-sizing: border-box; }
+        #unit-list { list-style: none; padding: 0; margin: 5px 0; max-height: 50px; overflow-y: auto; font-size: 0.8rem; background: #111; border-radius: 4px; }
+        li { padding: 3px 8px; border-bottom: 1px solid #222; }
     </style>
 </head>
 <body>
 
-<div id="app-container">
-    <div id="sidebar">
-        <input type="text" id="unit-id" placeholder="NOM DE L'UNITÉ">
-        <div style="display: flex; gap: 5px;">
-            <button id="btn-vocal">MICRO : OFF</button>
-            <button id="btn-signal">S'AFFICHER</button>
-        </div>
-        <button id="btn-pec">DÉMARRER PRISE EN CHARGE</button>
-        <div id="main-status" class="status-badge">ZONE SÉCURISÉE</div>
-        <ul id="unit-list"></ul>
+<div id="sidebar">
+    <input type="text" id="unit-id" placeholder="NOM DE L'UNITÉ">
+    <div style="display: flex; gap: 5px;">
+        <button id="btn-vocal">🎙️ VOCAL : OFF</button>
+        <button id="btn-signal">📡 S'AFFICHER</button>
     </div>
-    <div id="map"></div>
+    <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
+    <div id="main-status" class="status-badge">ZONE SÉCURISÉE</div>
+    <ul id="unit-list"></ul>
 </div>
+<div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
@@ -59,16 +58,16 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
 <script>
-    // 1. INITIALISATION FIREBASE
+    // --- INITIALISATION ---
     const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
     const idInput = document.getElementById('unit-id');
-    let myId = localStorage.getItem('unit_name') || "Unité-" + Math.floor(Math.random() * 100);
+    let myId = localStorage.getItem('unit_name') || "U-" + Math.floor(Math.random() * 999);
     idInput.value = myId;
 
-    const map = L.map('map').setView([48.8566, 2.3522], 15);
+    const map = L.map('map', { zoomControl: false }).setView([48.8566, 2.3522], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     let myPos = null;
@@ -79,33 +78,25 @@
     const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
     const statusBadge = document.getElementById('main-status');
 
-    // 2. TCHAT VOCAL (PEERJS)
+    // --- TCHAT VOCAL ---
     const peer = new Peer(myId.replace(/\s+/g, '-'));
-    const btnVocal = document.getElementById('btn-vocal');
-
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-        myStream = stream;
-        myStream.getAudioTracks()[0].enabled = false;
-    }).catch(() => console.log("Micro refusé"));
-
-    btnVocal.onclick = () => {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(st => { myStream = st; myStream.getAudioTracks()[0].enabled = false; });
+    
+    document.getElementById('btn-vocal').onclick = function() {
         if(!myStream) return;
         const active = myStream.getAudioTracks()[0].enabled;
         myStream.getAudioTracks()[0].enabled = !active;
-        btnVocal.innerText = !active ? "MICRO : ON" : "MICRO : OFF";
-        btnVocal.classList.toggle('on');
+        this.innerText = !active ? "🎙️ VOCAL : ON" : "🎙️ VOCAL : OFF";
+        this.classList.toggle('on');
     };
 
     peer.on('call', call => {
         call.answer(myStream);
-        call.on('stream', st => {
-            const audio = document.createElement('audio');
-            audio.srcObject = st; audio.play();
-        });
+        call.on('stream', st => { const audio = new Audio(); audio.srcObject = st; audio.play(); });
     });
 
-    // 3. SYNCHRONISATION
-    function pushData() {
+    // --- MISE À JOUR BASE ---
+    function send() {
         if (!myPos) return;
         const safeId = myId.replace(/[.#$\[\]]/g, "_");
         if (isVisible) {
@@ -118,45 +109,46 @@
     document.getElementById('btn-signal').onclick = function() {
         isVisible = !isVisible;
         this.classList.toggle('active');
-        this.innerText = isVisible ? "VISIBLE" : "S'AFFICHER";
-        pushData();
+        this.innerText = isVisible ? "📡 VISIBLE" : "📡 S'AFFICHER";
+        send();
     };
 
     document.getElementById('btn-pec').onclick = function() {
         isPEC = !isPEC;
         this.classList.toggle('active');
-        this.innerText = isPEC ? "EN INTERCEPTION" : "DÉMARRER PRISE EN CHARGE";
-        pushData();
+        this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
+        send();
     };
 
     idInput.onchange = function() {
         db.ref('vehicles/' + myId.replace(/[.#$\[\]]/g, "_")).remove();
         myId = this.value;
         localStorage.setItem('unit_name', myId);
-        pushData();
+        send();
     };
 
-    // 4. RÉCEPTION GLOBALE
+    // --- LE CŒUR : ÉCOUTEUR DE NOTIFICATION ET POSITIONS ---
     db.ref('vehicles/').on('value', (snap) => {
         const data = snap.val() || {};
         const list = document.getElementById('unit-list');
         list.innerHTML = "";
-        let pecUnit = null;
-        let collision = false;
+        
+        let pecActiveId = null;
+        let collisionAlert = false;
         const safeMyId = myId.replace(/[.#$\[\]]/g, "_");
 
-        // Nettoyage marqueurs
-        for (let id in otherMarkers) {
-            if (!data[id]) { map.removeLayer(otherMarkers[id]); delete otherMarkers[id]; }
-        }
+        // Gérer les marqueurs
+        for (let id in otherMarkers) { if (!data[id]) { map.removeLayer(otherMarkers[id]); delete otherMarkers[id]; } }
 
         for (let id in data) {
             const v = data[id];
-            if (v.active) pecUnit = id.replace(/_/g, ' ');
+            
+            // VERIFICATION CRITIQUE POUR LA NOTIFICATION
+            if (v.active === true) { pecActiveId = id.replace(/_/g, ' '); }
 
             if (id === safeMyId) continue;
 
-            // Carte
+            // Dessin Map
             if (!otherMarkers[id]) {
                 otherMarkers[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
                 if (myStream) peer.call(id.replace(/\s+/g, '-'), myStream);
@@ -164,40 +156,38 @@
                 otherMarkers[id].setLatLng([v.lat, v.lon]);
             }
 
-            // Anti-collision
+            // Anti-collision < 50m
             if (myPos) {
-                const R = 6371000;
-                const dLat = (v.lat - myPos.lat) * Math.PI / 180;
-                const dLon = (v.lon - myPos.lon) * Math.PI / 180;
-                const a = Math.sin(dLat/2)**2 + Math.cos(v.lat*Math.PI/180)*Math.cos(myPos.lat*Math.PI/180)*Math.sin(dLon/2)**2;
-                if (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) < 50) collision = true;
+                const dist = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
+                if (dist < 50) collisionAlert = true;
             }
 
             const li = document.createElement('li');
-            li.innerText = (v.active ? "🚨 " : "🚔 ") + id.replace(/_/g, ' ');
+            li.style.color = v.active ? '#ff4444' : '#3498db';
+            li.innerText = (v.active ? "🔴 " : "🚔 ") + id.replace(/_/g, ' ');
             list.appendChild(li);
         }
 
-        // AFFICHAGE ALERTE GLOBALE SUR TOUS LES TELEPHONES
-        if (pecUnit) {
-            statusBadge.innerText = "🚨 PRISE EN CHARGE : " + pecUnit;
-            statusBadge.className = "status-badge danger-mode";
-        } else if (collision) {
-            statusBadge.innerText = "⚠️ PROXIMITÉ CRITIQUE";
-            statusBadge.className = "status-badge danger-mode";
-            if(navigator.vibrate) navigator.vibrate(500);
+        // --- AFFICHAGE DE LA NOTIFICATION SUR TOUS LES ÉCRANS ---
+        if (pecActiveId) {
+            statusBadge.innerText = "🚨 ALERTE : " + pecActiveId.toUpperCase() + " EN INTERCEPTION";
+            statusBadge.classList.add('danger-mode');
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        } else if (collisionAlert) {
+            statusBadge.innerText = "⚠️ DANGER : COLLISION PROCHE";
+            statusBadge.classList.add('danger-mode');
         } else {
             statusBadge.innerText = "ZONE SÉCURISÉE";
-            statusBadge.className = "status-badge";
+            statusBadge.classList.remove('danger-mode');
         }
     });
 
-    // 5. GPS
+    // --- GPS ---
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
-        map.setView([myPos.lat, myPos.lon]);
-        pushData();
+        if (!map.getBounds().contains(myMarker.getLatLng())) map.panTo([myPos.lat, myPos.lon]);
+        send();
         db.ref('vehicles/' + myId.replace(/[.#$\[\]]/g, "_")).onDisconnect().remove();
     }, null, { enableHighAccuracy: true });
 
