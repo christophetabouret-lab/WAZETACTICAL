@@ -8,7 +8,6 @@
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
         
-        /* BANDEAU SUPÉRIEUR FUSIONNÉ */
         #main-header {
             width: 85%; margin: 10px auto; text-align: center;
             padding: 15px; border: 2px solid #e74c3c; color: #e74c3c;
@@ -17,7 +16,6 @@
             font-size: 1.2rem; min-height: 30px; transition: all 0.3s;
         }
 
-        /* ÉTATS DU BANDEAU */
         .header-alert { 
             background: #ff0000 !important; color: white !important; 
             border: 3px solid white !important;
@@ -31,7 +29,6 @@
         }
 
         #ui-panel { padding: 5px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
-
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.7rem; }
         
@@ -171,7 +168,6 @@
         sendUpdate();
     };
 
-    // LOGIQUE FUSIONNÉE TITRE / ALERTE / MESSAGE
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {};
         const data = root.vehicles || {};
@@ -179,7 +175,7 @@
         const now = Date.now();
         let unitInAction = null;
 
-        // Message bleu prioritaire
+        // Message bleu - SUPPRESSION DÉFINITIVE APRÈS LECTURE
         if (lastMsg.ts && lastMsg.from !== myName) {
             if (!window.lastShownTs || window.lastShownTs !== lastMsg.ts) {
                 window.lastShownTs = lastMsg.ts;
@@ -187,28 +183,37 @@
                 header.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
                 header.className = "header-msg";
                 setTimeout(() => speak(lastMsg.from + " dit " + lastMsg.text), 100);
-                setTimeout(() => { isLockedForMsg = false; header.className = ""; }, 7000);
+                
+                // On attend 7 secondes puis on vide la base de données pour ce message
+                setTimeout(() => { 
+                    isLockedForMsg = false;
+                    header.className = "";
+                    db.ref('last_msg').remove(); // EFFACE DÉFINITIVEMENT LE MESSAGE
+                }, 7000);
             }
         }
 
-        // Nettoyage marqueurs
         for (let id in markers) { map.removeLayer(markers[id]); delete markers[id]; }
         
-        for (let id in data) {
-            const v = data[id];
-            if (now - v.ts > 30000) continue;
-            if (v.active) unitInAction = id.replace(/_/g, ' ');
-            if (isVisible && id !== myName.replace(/[^a-zA-Z0-9]/g, "_")) {
-                markers[id] = L.marker([v.lat, v.lon]).addTo(map);
+        if (isVisible) {
+            for (let id in data) {
+                const v = data[id];
+                if (now - v.ts > 30000) continue;
+                if (v.active) unitInAction = id.replace(/_/g, ' ');
+                if (id !== myName.replace(/[^a-zA-Z0-9]/g, "_")) {
+                    markers[id] = L.marker([v.lat, v.lon]).addTo(map);
+                }
+            }
+        } else {
+            for (let id in data) {
+                if (data[id].active && (now - data[id].ts < 30000)) unitInAction = id.replace(/_/g, ' ');
             }
         }
 
-        // Animation alternée si alerte
         if (!isLockedForMsg) {
             if (unitInAction) {
                 if (header.className !== "header-alert") playBip();
                 header.className = "header-alert";
-                // On alterne le texte toutes les secondes
                 altToggle = !altToggle;
                 header.innerText = altToggle ? "🚨 " + unitInAction.toUpperCase() : "TACTICAL DEPLOY";
             } else {
@@ -225,7 +230,6 @@
         if (isVisible || isPEC) sendUpdate();
     }, null, { enableHighAccuracy: true });
 
-    // Boucle d'alternance du titre
     setInterval(() => { if (!isLockedForMsg) db.ref().once('value', (s) => {}); }, 1000);
 </script>
 </body>
