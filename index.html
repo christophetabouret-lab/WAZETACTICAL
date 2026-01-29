@@ -44,7 +44,6 @@
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 5px; box-sizing: border-box; }
         #map { height: calc(100vh - 360px); width: 100%; background: #222; }
 
-        /* Style Gyrophare */
         .police-icon {
             background: #34495e; border: 2px solid white; border-radius: 3px;
             width: 30px !important; height: 16px !important;
@@ -91,7 +90,14 @@
     const idInput = document.getElementById('user-id');
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
-    idInput.onchange = () => { myName = idInput.value; localStorage.setItem('unit_name', myName); };
+    
+    idInput.onchange = () => { 
+        // Nettoyer l'ancienne position en DB avant de changer de nom
+        const oldId = myName.replace(/[^a-zA-Z0-9]/g, "_");
+        db.ref('vehicles/' + oldId).remove();
+        myName = idInput.value; 
+        localStorage.setItem('unit_name', myName); 
+    };
 
     const header = document.getElementById('main-header');
     const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
@@ -119,7 +125,7 @@
     };
 
     let myPos = null, isVisible = false, isPEC = false, myStream = null, firstFix = true;
-    const markers = {};
+    let markers = {}; 
     const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
 
     function speak(text) {
@@ -158,7 +164,7 @@
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
         if (isVisible || isPEC) {
-            db.ref('vehicles/' + safeId).update({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
         } else { db.ref('vehicles/' + safeId).remove(); }
     }
 
@@ -205,28 +211,31 @@
             }
         }
 
-        for (let id in markers) { map.removeLayer(markers[id]); delete markers[id]; }
+        // Nettoyage TOTAL des marqueurs tiers avant mise à jour
+        for (let id in markers) { map.removeLayer(markers[id]); }
+        markers = {}; 
         
+        const mySafeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
+
         for (let id in data) {
             const v = data[id];
-            if (now - v.ts > 30000) continue;
-            const isMe = (id === myName.replace(/[^a-zA-Z0-9]/g, "_"));
+            // Filtre strict : si les données datent de plus de 10 secondes, on ignore
+            if (now - v.ts > 10000) continue; 
 
             if (v.active) {
                 unitInAction = id.replace(/_/g, ' ');
                 actionPos = [v.lat, v.lon];
             }
 
-            if (isVisible || v.active) {
-                if (!isMe) {
-                    const m = L.marker([v.lat, v.lon], v.active ? { icon: gyroIcon } : {}).addTo(map)
-                        .bindTooltip(id.replace(/_/g, ' '), { permanent: v.active, direction: 'top' });
-                    markers[id] = m;
-                } else {
-                    myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
-                }
+            // Affichage si c'est une autre unité et que les conditions sont remplies
+            if (id !== mySafeId && (isVisible || v.active)) {
+                markers[id] = L.marker([v.lat, v.lon], v.active ? { icon: gyroIcon } : {}).addTo(map)
+                    .bindTooltip(id.replace(/_/g, ' '), { permanent: v.active, direction: 'top' });
             }
         }
+
+        // Ma propre icône
+        myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
 
         if (actionPos) {
             map.setView(actionPos, map.getZoom() < 15 ? 17 : map.getZoom()); 
