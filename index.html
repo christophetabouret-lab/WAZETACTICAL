@@ -39,7 +39,7 @@
         #btn-pec { background: #e67e22; grid-column: span 2; height: 45px; font-size: 0.9rem; }
         #btn-pec.active { background: #c0392b; }
         #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
-        #btn-test { background: #9b59b6; height: 35px; }
+        #btn-reset { background: #6c5ce7; height: 35px; } /* Bouton Reset */
 
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 5px; box-sizing: border-box; }
         #map { height: calc(100vh - 360px); width: 100%; background: #222; }
@@ -71,7 +71,7 @@
         <button id="btn-signal">📡 REJOINDRE LE DISPOSITIF</button>
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
         <button id="btn-sat">🗺️ SATELLITE</button>
-        <button id="btn-test">⚙️ TEST ALERTE</button>
+        <button id="btn-reset">🧹 RESET DATA</button>
     </div>
 </div>
 
@@ -92,7 +92,6 @@
     idInput.value = myName;
     
     idInput.onchange = () => { 
-        // Nettoyer l'ancienne position en DB avant de changer de nom
         const oldId = myName.replace(/[^a-zA-Z0-9]/g, "_");
         db.ref('vehicles/' + oldId).remove();
         myName = idInput.value; 
@@ -122,6 +121,13 @@
         if (!isSat) { map.removeLayer(osm); map.addLayer(sat); } 
         else { map.removeLayer(sat); map.addLayer(osm); }
         isSat = !isSat;
+    };
+
+    // Fonction de réinitialisation de la base
+    document.getElementById('btn-reset').onclick = function() {
+        if(confirm("Effacer toutes les positions du dispositif ?")) {
+            db.ref('vehicles').remove();
+        }
     };
 
     let myPos = null, isVisible = false, isPEC = false, myStream = null, firstFix = true;
@@ -211,7 +217,6 @@
             }
         }
 
-        // Nettoyage TOTAL des marqueurs tiers avant mise à jour
         for (let id in markers) { map.removeLayer(markers[id]); }
         markers = {}; 
         
@@ -219,7 +224,6 @@
 
         for (let id in data) {
             const v = data[id];
-            // Filtre strict : si les données datent de plus de 10 secondes, on ignore
             if (now - v.ts > 10000) continue; 
 
             if (v.active) {
@@ -227,14 +231,12 @@
                 actionPos = [v.lat, v.lon];
             }
 
-            // Affichage si c'est une autre unité et que les conditions sont remplies
             if (id !== mySafeId && (isVisible || v.active)) {
                 markers[id] = L.marker([v.lat, v.lon], v.active ? { icon: gyroIcon } : {}).addTo(map)
                     .bindTooltip(id.replace(/_/g, ' '), { permanent: v.active, direction: 'top' });
             }
         }
 
-        // Ma propre icône
         myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
 
         if (actionPos) {
