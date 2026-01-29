@@ -39,7 +39,7 @@
         #btn-pec { background: #e67e22; grid-column: span 2; height: 45px; font-size: 0.9rem; }
         #btn-pec.active { background: #c0392b; }
         #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
-        #btn-reset { background: #6c5ce7; height: 35px; } /* Bouton Reset */
+        #btn-reset { background: #6c5ce7; height: 35px; }
 
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 5px; box-sizing: border-box; }
         #map { height: calc(100vh - 360px); width: 100%; background: #222; }
@@ -123,7 +123,6 @@
         isSat = !isSat;
     };
 
-    // Fonction de réinitialisation de la base
     document.getElementById('btn-reset').onclick = function() {
         if(confirm("Effacer toutes les positions du dispositif ?")) {
             db.ref('vehicles').remove();
@@ -170,7 +169,8 @@
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
         if (isVisible || isPEC) {
-            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
+            // Ajout de 'label' pour envoyer le nom réel
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now(), label: myName });
         } else { db.ref('vehicles/' + safeId).remove(); }
     }
 
@@ -226,14 +226,16 @@
             const v = data[id];
             if (now - v.ts > 10000) continue; 
 
+            const displayName = v.label || id.replace(/_/g, ' ');
+
             if (v.active) {
-                unitInAction = id.replace(/_/g, ' ');
+                unitInAction = displayName; // Utilise maintenant le nom réel
                 actionPos = [v.lat, v.lon];
             }
 
             if (id !== mySafeId && (isVisible || v.active)) {
                 markers[id] = L.marker([v.lat, v.lon], v.active ? { icon: gyroIcon } : {}).addTo(map)
-                    .bindTooltip(id.replace(/_/g, ' '), { permanent: v.active, direction: 'top' });
+                    .bindTooltip(displayName, { permanent: v.active, direction: 'top' });
             }
         }
 
