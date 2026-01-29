@@ -9,7 +9,7 @@
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
         
         #main-header {
-            width: 85%; margin: 10px auto; text-align: center;
+            width: 80%; margin: 10px auto; text-align: center;
             padding: 15px; border: 2px solid #e74c3c; color: #e74c3c;
             font-weight: bold; background: #2c2c2c; border-radius: 8px;
             text-transform: uppercase; letter-spacing: 2px;
@@ -76,6 +76,7 @@
     const idInput = document.getElementById('user-id');
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
+    idInput.onchange = () => { myName = idInput.value; localStorage.setItem('unit_name', myName); };
 
     const header = document.getElementById('main-header');
     const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
@@ -129,16 +130,12 @@
     });
 
     document.getElementById('btn-vocal').onclick = function() {
+        if(!myStream) return;
         const active = myStream.getAudioTracks()[0].enabled;
         myStream.getAudioTracks()[0].enabled = !active;
         this.innerText = !active ? "🎙️ VOCAL : ON" : "🎙️ LIVE VOCAL";
         this.classList.toggle('on');
     };
-
-    peer.on('call', call => {
-        call.answer(myStream);
-        call.on('stream', st => { const audio = new Audio(); audio.srcObject = st; audio.play(); });
-    });
 
     function sendUpdate() {
         if (!myPos) return;
@@ -153,7 +150,7 @@
         isVisible = !isVisible;
         this.classList.toggle('active');
         this.innerText = isVisible ? "✅ DISPOSITIF REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
-        speak(""); sendUpdate();
+        sendUpdate();
     };
 
     document.getElementById('btn-pec').onclick = function() {
@@ -174,8 +171,8 @@
         const lastMsg = root.last_msg || {};
         const now = Date.now();
         let unitInAction = null;
+        let actionPos = null;
 
-        // Message bleu - SUPPRESSION DÉFINITIVE APRÈS LECTURE
         if (lastMsg.ts && lastMsg.from !== myName) {
             if (!window.lastShownTs || window.lastShownTs !== lastMsg.ts) {
                 window.lastShownTs = lastMsg.ts;
@@ -183,31 +180,37 @@
                 header.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text;
                 header.className = "header-msg";
                 setTimeout(() => speak(lastMsg.from + " dit " + lastMsg.text), 100);
-                
-                // On attend 7 secondes puis on vide la base de données pour ce message
                 setTimeout(() => { 
                     isLockedForMsg = false;
                     header.className = "";
-                    db.ref('last_msg').remove(); // EFFACE DÉFINITIVEMENT LE MESSAGE
+                    db.ref('last_msg').remove(); 
                 }, 7000);
             }
         }
 
         for (let id in markers) { map.removeLayer(markers[id]); delete markers[id]; }
         
-        if (isVisible) {
-            for (let id in data) {
-                const v = data[id];
-                if (now - v.ts > 30000) continue;
-                if (v.active) unitInAction = id.replace(/_/g, ' ');
-                if (id !== myName.replace(/[^a-zA-Z0-9]/g, "_")) {
-                    markers[id] = L.marker([v.lat, v.lon]).addTo(map);
+        for (let id in data) {
+            const v = data[id];
+            if (now - v.ts > 30000) continue;
+            const isMe = (id === myName.replace(/[^a-zA-Z0-9]/g, "_"));
+
+            if (v.active) {
+                unitInAction = id.replace(/_/g, ' ');
+                actionPos = [v.lat, v.lon];
+            }
+
+            if (isVisible || v.active) {
+                if (!isMe) {
+                    markers[id] = L.marker([v.lat, v.lon]).addTo(map)
+                        .bindTooltip(id.replace(/_/g, ' '), { permanent: v.active, direction: 'top' });
+                    if (v.active) markers[id].getElement().style.filter = "hue-rotate(120deg) brightness(1.2)";
                 }
             }
-        } else {
-            for (let id in data) {
-                if (data[id].active && (now - data[id].ts < 30000)) unitInAction = id.replace(/_/g, ' ');
-            }
+        }
+
+        if (actionPos) {
+            map.setView(actionPos, map.getZoom() < 15 ? 17 : map.getZoom()); 
         }
 
         if (!isLockedForMsg) {
@@ -215,7 +218,7 @@
                 if (header.className !== "header-alert") playBip();
                 header.className = "header-alert";
                 altToggle = !altToggle;
-                header.innerText = altToggle ? "🚨 " + unitInAction.toUpperCase() : "TACTICAL DEPLOY";
+                header.innerText = altToggle ? "🚨 " + unitInAction.toUpperCase() : "POURSUITE EN COURS";
             } else {
                 header.innerText = "TACTICAL DEPLOY";
                 header.className = "";
@@ -230,7 +233,6 @@
         if (isVisible || isPEC) sendUpdate();
     }, null, { enableHighAccuracy: true });
 
-    setInterval(() => { if (!isLockedForMsg) db.ref().once('value', (s) => {}); }, 1000);
 </script>
 </body>
 </html>
