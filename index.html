@@ -43,6 +43,21 @@
 
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 5px; box-sizing: border-box; }
         #map { height: calc(100vh - 360px); width: 100%; background: #222; }
+
+        /* Style Gyrophare */
+        .police-icon {
+            background: #34495e; border: 2px solid white; border-radius: 3px;
+            width: 30px !important; height: 16px !important;
+        }
+        .police-icon::after {
+            content: ''; position: absolute; top: -6px; left: 50%;
+            transform: translateX(-50%); width: 12px; height: 12px;
+            border-radius: 50%; animation: gyro-flash 0.4s infinite alternate;
+        }
+        @keyframes gyro-flash {
+            0% { background: red; box-shadow: 0 0 10px red; }
+            100% { background: blue; box-shadow: 0 0 12px blue; }
+        }
     </style>
 </head>
 <body>
@@ -83,6 +98,8 @@
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false, isLockedForMsg = false, altToggle = false;
+
+    const gyroIcon = L.divIcon({ className: 'police-icon', iconSize: [30, 16], iconAnchor: [15, 8] });
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playBip() {
@@ -202,9 +219,11 @@
 
             if (isVisible || v.active) {
                 if (!isMe) {
-                    markers[id] = L.marker([v.lat, v.lon]).addTo(map)
+                    const m = L.marker([v.lat, v.lon], v.active ? { icon: gyroIcon } : {}).addTo(map)
                         .bindTooltip(id.replace(/_/g, ' '), { permanent: v.active, direction: 'top' });
-                    if (v.active) markers[id].getElement().style.filter = "hue-rotate(120deg) brightness(1.2)";
+                    markers[id] = m;
+                } else {
+                    myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
                 }
             }
         }
