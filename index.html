@@ -21,47 +21,37 @@
             z-index: 1001;
         }
 
-        #map-container {
-            position: relative;
-            flex-grow: 1;
-            width: 100%;
-            overflow: hidden;
-        }
+        /* Conteneur Carte et Halos */
+        #map-container { position: relative; flex-grow: 1; width: 100%; overflow: hidden; display: flex; }
+        #map { height: 100%; width: 100%; background: #1a1a1a; z-index: 1; }
 
-        #map { height: 100%; width: 100%; background: #1a1a1a; }
-
+        /* Correction Halos Latéraux */
         .vigilance-halo {
-            position: absolute; top: 0; bottom: 0; width: 60px;
-            z-index: 1000; pointer-events: none; display: none;
-            animation: halo-pulse 0.8s infinite alternate;
+            position: absolute; top: 0; bottom: 0; width: 100px;
+            z-index: 1000; pointer-events: none; opacity: 0;
+            transition: opacity 0.3s ease;
         }
+        #halo-left { left: 0; }
+        #halo-right { right: 0; }
         
-        .halo-orange #halo-left { background: linear-gradient(to right, rgba(243, 156, 18, 0.7), transparent); }
-        .halo-orange #halo-right { background: linear-gradient(to left, rgba(243, 156, 18, 0.7), transparent); }
-        .halo-red #halo-left { background: linear-gradient(to right, rgba(231, 76, 60, 0.8), transparent); }
-        .halo-red #halo-right { background: linear-gradient(to left, rgba(231, 76, 60, 0.8), transparent); }
+        /* Animation Halos Orange */
+        .halo-orange #halo-left { opacity: 1; background: linear-gradient(to right, rgba(243, 156, 18, 0.7), transparent); animation: halo-pulse 0.8s infinite alternate; }
+        .halo-orange #halo-right { opacity: 1; background: linear-gradient(to left, rgba(243, 156, 18, 0.7), transparent); animation: halo-pulse 0.8s infinite alternate; }
+        
+        /* Animation Halos Rouge */
+        .halo-red #halo-left { opacity: 1; background: linear-gradient(to right, rgba(231, 76, 60, 0.8), transparent); animation: halo-pulse 0.5s infinite alternate; }
+        .halo-red #halo-right { opacity: 1; background: linear-gradient(to left, rgba(231, 76, 60, 0.8), transparent); animation: halo-pulse 0.5s infinite alternate; }
 
-        @keyframes halo-pulse { from { opacity: 0.4; } to { opacity: 1; } }
-
-        .header-alert { background: var(--accent-red) !important; color: white !important; border-color: white !important; }
-        .header-msg { background: var(--accent-blue) !important; color: white !important; border-color: white !important; }
+        @keyframes halo-pulse { from { opacity: 0.3; } to { opacity: 1; } }
 
         #ui-panel { padding: 10px 15px 15px; background: var(--panel-bg); z-index: 1001; border-top: 1px solid #333; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        
         button { padding: 14px 10px; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 6px; }
 
-        #btn-vocal { background: #3d3d3d; } #btn-vocal.on { background: var(--accent-green); }
-        #btn-dict { background: var(--accent-purple); } 
         #btn-signal { background: var(--accent-blue); grid-column: span 2; height: 50px; }
         #btn-signal.active { background: var(--accent-green); }
-        #btn-pec { background: #d35400; grid-column: span 2; height: 55px; font-size: 0.95rem; }
-        #btn-pec.active { background: #c0392b; animation: danger-pulse 1.5s infinite; }
-
-        @keyframes danger-pulse { 0% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(192, 57, 43, 0); } 100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0); } }
-
-        #btn-sat { background: #2c3e50; } #btn-reset { background: #5a5a5a; }
-        input { width: 100%; padding: 14px; background: #252525; border: 1px solid #3d3d3d; color: white; border-radius: 8px; margin-bottom: 12px; box-sizing: border-box; }
+        #btn-pec { background: #d35400; grid-column: span 2; height: 55px; border-bottom: 4px solid #a04000; }
+        #btn-pec.active { background: #c0392b; }
 
         .police-icon { background: #2c3e50; border: 2px solid white; border-radius: 4px; width: 32px !important; height: 18px !important; position: relative; }
         .police-icon::after { content: ''; position: absolute; top: -7px; left: 50%; transform: translateX(-50%); width: 14px; height: 14px; border-radius: 50%; animation: gyro-flash 0.4s infinite alternate; }
@@ -69,7 +59,6 @@
         
         .danger-marker { display: flex; justify-content: center; align-items: center; font-size: 32px; filter: drop-shadow(0 0 5px black); animation: bounce 0.4s infinite alternate; }
         @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-8px); } }
-
         .tactical-tooltip { background: rgba(0,0,0,0.8); color: white; border: 1px solid var(--accent-blue); font-weight: bold; }
     </style>
 </head>
@@ -84,20 +73,19 @@
 </div>
 
 <div id="ui-panel">
-    <input type="text" id="user-id" placeholder="IDENTIFIANT UNITÉ" spellcheck="false">
+    <input type="text" id="user-id" placeholder="IDENTIFIANT UNITÉ">
     <div class="btn-grid">
-        <button id="btn-vocal">🎙️ LIVE VOCAL</button>
-        <button id="btn-dict">🗣️ DICTER MSG</button>
+        <button id="btn-vocal" style="background: #3d3d3d;">🎙️ LIVE VOCAL</button>
+        <button id="btn-dict" style="background: var(--accent-purple);">🗣️ DICTER MSG</button>
         <button id="btn-signal">📡 REJOINDRE LE DISPOSITIF</button>
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
-        <button id="btn-sat">🗺️ SATELLITE</button>
-        <button id="btn-reset">🧹 RESET DATA</button>
+        <button id="btn-sat" style="background: #2c3e50;">🗺️ SATELLITE</button>
+        <button id="btn-reset" style="background: #5a5a5a;">🧹 RESET DATA</button>
     </div>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
@@ -106,128 +94,102 @@
     const db = firebase.database();
 
     const idInput = document.getElementById('user-id');
+    const btnSignal = document.getElementById('btn-signal');
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
-    
-    idInput.onchange = () => { 
-        const oldId = myName.replace(/[^a-zA-Z0-9]/g, "_");
-        db.ref('vehicles/' + oldId).remove();
-        myName = idInput.value; localStorage.setItem('unit_name', myName); 
-    };
+    idInput.onchange = () => { myName = idInput.value; localStorage.setItem('unit_name', myName); };
 
-    const header = document.getElementById('main-header');
     const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([0, 0], 2);
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
-    let isSat = false, isLockedForMsg = false, altToggle = false, lastAnnouncedUnit = null;
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     
     const gyroIcon = L.divIcon({ className: 'police-icon', iconSize: [32, 18], iconAnchor: [16, 9] });
     const dangerIcon = L.divIcon({ className: 'danger-marker', html: '⚠️', iconSize: [40, 40], iconAnchor: [20, 35] });
 
-    let myPos = null, isVisible = false, isPEC = false, firstFix = true;
-    let markers = {}; 
+    let myPos = null, isVisible = false, isPEC = false, markers = {}; 
     const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map);
 
     function getDistance(lat1, lon1, lat2, lon2) {
         const R = 6371e3;
-        const φ1 = lat1 * Math.PI/180; const φ2 = lat2 * Math.PI/180;
-        const Δφ = (lat2-lat1) * Math.PI/180; const Δλ = (lon2-lon1) * Math.PI/180;
-        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180, Δφ = (lat2-lat1) * Math.PI/180, Δλ = (lon2-lon1) * Math.PI/180;
+        const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
     function sendUpdate() { 
-        if (!myPos) return; 
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_"); 
         if (isVisible || isPEC) { 
             db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now(), label: myName }); 
         } else { db.ref('vehicles/' + safeId).remove(); } 
     }
 
-    setInterval(() => { if (isVisible || isPEC) sendUpdate(); }, 3000);
-
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playBip(freq = 880) { if (audioCtx.state === 'suspended') audioCtx.resume(); const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination); osc.frequency.setValueAtTime(freq, audioCtx.currentTime); gain.gain.setValueAtTime(0.2, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.15); }
-
     document.getElementById('btn-pec').onclick = function() {
         isPEC = !isPEC;
-        this.classList.toggle('active');
+        this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        
-        const btnSignal = document.getElementById('btn-signal');
-        if (isPEC) { 
-            isVisible = true; 
-            btnSignal.classList.add('active'); 
-            btnSignal.innerText = "✅ REJOINT"; 
-        } else {
-            // Repasse au bleu pour tout le monde quand on clique sur STOP
-            isVisible = false;
-            btnSignal.classList.remove('active');
-            btnSignal.innerText = "📡 REJOINDRE LE DISPOSITIF";
-        }
+        isVisible = isPEC; 
         sendUpdate();
     };
 
-    document.getElementById('btn-sat').onclick = function() { if (!isSat) { map.removeLayer(osm); map.addLayer(sat); } else { map.removeLayer(sat); map.addLayer(osm); } isSat = !isSat; };
-    document.getElementById('btn-reset').onclick = function() { if(confirm("Effacer toutes les positions ?")) { db.ref('vehicles').remove(); lastAnnouncedUnit = null; } };
-    document.getElementById('btn-signal').onclick = function() { if (audioCtx.state === 'suspended') audioCtx.resume(); isVisible = !isVisible; this.classList.toggle('active'); this.innerText = isVisible ? "✅ REJOINT" : "📡 REJOINDRE"; sendUpdate(); };
-    function speak(text) { if (!window.speechSynthesis) return; window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.lang = 'fr-FR'; window.speechSynthesis.speak(utterance); }
+    btnSignal.onclick = () => { isVisible = !isVisible; sendUpdate(); };
 
-    db.ref().on('value', (snapshot) => {
-        const root = snapshot.val() || {}; const data = root.vehicles || {}; const now = Date.now();
-        let unitInAction = null, actionPos = null, collisionOrange = false, collisionRed = false;
-        
+    db.ref('vehicles').on('value', (snapshot) => {
+        const data = snapshot.val() || {};
+        const now = Date.now();
+        let unitInAction = null, actionPos = null, colOrange = false, colRed = false;
+        let globalActive = false;
+
         for (let id in markers) { map.removeLayer(markers[id]); } markers = {}; 
         const mySafeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
-        
+
         for (let id in data) { 
             const v = data[id]; const isMe = (id === mySafeId);
             if (now - v.ts > 15000) continue; 
-            
+            if (v.active) globalActive = true;
+
             const displayName = v.label || id.replace(/_/g, ' '); 
-            let dist = 9999;
             if (!isMe && myPos) {
-                dist = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
-                if (dist < 250) collisionRed = true;
-                else if (dist < 500) collisionOrange = true;
+                const dist = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
+                if (dist < 250) colRed = true;
+                else if (dist < 500) colOrange = true;
+
+                if (isVisible || v.active) {
+                    const icon = (dist < 500) ? dangerIcon : (v.active ? gyroIcon : new L.Icon.Default());
+                    markers[id] = L.marker([v.lat, v.lon], { icon }).addTo(map)
+                        .bindTooltip(displayName, { permanent: true, direction: 'top', className: 'tactical-tooltip', offset: [0, -10] });
+                }
             }
-
             if (v.active) { unitInAction = displayName; actionPos = [v.lat, v.lon]; } 
-
-            if (!isMe && (isVisible || v.active)) { 
-                const currentIcon = (dist < 500) ? dangerIcon : (v.active ? gyroIcon : new L.Icon.Default());
-                const m = L.marker([v.lat, v.lon], { icon: currentIcon }).addTo(map);
-                m.bindTooltip(displayName, { permanent: true, direction: 'top', className: 'tactical-tooltip', offset: [0, -10] });
-                markers[id] = m;
-            } 
         }
 
-        const container = document.getElementById('map-container');
-        const halos = document.querySelectorAll('.vigilance-halo');
-        container.classList.remove('halo-orange', 'halo-red');
-        
-        if (collisionRed) { container.classList.add('halo-red'); halos.forEach(h => h.style.display = 'block'); }
-        else if (collisionOrange) { container.classList.add('halo-orange'); halos.forEach(h => h.style.display = 'block'); }
-        else { halos.forEach(h => h.style.display = 'none'); }
+        // SYNCHRONISATION DU BOUTON REJOINDRE
+        if (globalActive || isVisible) {
+            btnSignal.classList.add('active');
+            btnSignal.innerText = "✅ REJOINT";
+        } else {
+            btnSignal.classList.remove('active');
+            btnSignal.innerText = "📡 REJOINDRE LE DISPOSITIF";
+        }
+
+        // GESTION DES HALOS
+        const cont = document.getElementById('map-container');
+        cont.classList.toggle('halo-red', colRed);
+        cont.classList.toggle('halo-orange', !colRed && colOrange);
 
         myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
-        if (actionPos) { map.setView(actionPos, map.getZoom() < 15 ? 17 : map.getZoom()); }
-
-        if (!isLockedForMsg) {
-            if (unitInAction) {
-                if (header.className !== "header-alert") playBip(880);
-                header.className = "header-alert";
-                altToggle = !altToggle;
-                header.innerText = altToggle ? "🚨 " + unitInAction.toUpperCase() : "PRISE EN CHARGE";
-            } else { header.innerText = "TACTICAL DEPLOY"; header.className = ""; }
-        }
+        if (actionPos) map.setView(actionPos, 17);
+        const header = document.getElementById('main-header');
+        header.innerText = unitInAction ? "🚨 " + unitInAction.toUpperCase() : "TACTICAL DEPLOY";
+        header.className = unitInAction ? "header-alert" : "";
     });
 
     navigator.geolocation.watchPosition((p) => { 
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; 
         myMarker.setLatLng([myPos.lat, myPos.lon]); 
-        if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; } 
+        if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
+        if (isVisible || isPEC) sendUpdate();
     }, null, { enableHighAccuracy: true });
+
+    setInterval(() => { if (isVisible || isPEC) sendUpdate(); }, 3000);
 </script>
 </body>
 </html>
