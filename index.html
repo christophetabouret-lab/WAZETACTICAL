@@ -21,24 +21,19 @@
             z-index: 1001;
         }
 
-        /* Conteneur Carte et Halos */
         #map-container { position: relative; flex-grow: 1; width: 100%; overflow: hidden; display: flex; }
         #map { height: 100%; width: 100%; background: #1a1a1a; z-index: 1; }
 
-        /* Correction Halos Latéraux */
         .vigilance-halo {
-            position: absolute; top: 0; bottom: 0; width: 100px;
+            position: absolute; top: 0; bottom: 0; width: 80px;
             z-index: 1000; pointer-events: none; opacity: 0;
             transition: opacity 0.3s ease;
         }
         #halo-left { left: 0; }
         #halo-right { right: 0; }
         
-        /* Animation Halos Orange */
         .halo-orange #halo-left { opacity: 1; background: linear-gradient(to right, rgba(243, 156, 18, 0.7), transparent); animation: halo-pulse 0.8s infinite alternate; }
         .halo-orange #halo-right { opacity: 1; background: linear-gradient(to left, rgba(243, 156, 18, 0.7), transparent); animation: halo-pulse 0.8s infinite alternate; }
-        
-        /* Animation Halos Rouge */
         .halo-red #halo-left { opacity: 1; background: linear-gradient(to right, rgba(231, 76, 60, 0.8), transparent); animation: halo-pulse 0.5s infinite alternate; }
         .halo-red #halo-right { opacity: 1; background: linear-gradient(to left, rgba(231, 76, 60, 0.8), transparent); animation: halo-pulse 0.5s infinite alternate; }
 
@@ -95,6 +90,7 @@
 
     const idInput = document.getElementById('user-id');
     const btnSignal = document.getElementById('btn-signal');
+    const btnPec = document.getElementById('btn-pec');
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
     idInput.onchange = () => { myName = idInput.value; localStorage.setItem('unit_name', myName); };
@@ -105,7 +101,7 @@
     const gyroIcon = L.divIcon({ className: 'police-icon', iconSize: [32, 18], iconAnchor: [16, 9] });
     const dangerIcon = L.divIcon({ className: 'danger-marker', html: '⚠️', iconSize: [40, 40], iconAnchor: [20, 35] });
 
-    let myPos = null, isVisible = false, isPEC = false, markers = {}; 
+    let myPos = null, isVisible = false, isPEC = false, firstFix = true, markers = {}; 
     const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map);
 
     function getDistance(lat1, lon1, lat2, lon2) {
@@ -116,27 +112,40 @@
     }
 
     function sendUpdate() { 
+        if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_"); 
         if (isVisible || isPEC) { 
             db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now(), label: myName }); 
         } else { db.ref('vehicles/' + safeId).remove(); } 
     }
 
-    document.getElementById('btn-pec').onclick = function() {
+    btnPec.onclick = function() {
         isPEC = !isPEC;
+        isVisible = isPEC ? true : isVisible; // Si j'active PEC, je rejoins forcément
         this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        isVisible = isPEC; 
+        updateUI();
         sendUpdate();
     };
 
-    btnSignal.onclick = () => { isVisible = !isVisible; sendUpdate(); };
+    btnSignal.onclick = () => { 
+        isVisible = !isVisible; 
+        if (!isVisible) isPEC = false; // Si je quitte le dispositif, j'arrête ma PEC
+        updateUI();
+        sendUpdate(); 
+    };
+
+    function updateUI() {
+        btnSignal.classList.toggle('active', isVisible);
+        btnSignal.innerText = isVisible ? "✅ REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
+        btnPec.classList.toggle('active', isPEC);
+        btnPec.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
+    }
 
     db.ref('vehicles').on('value', (snapshot) => {
         const data = snapshot.val() || {};
         const now = Date.now();
         let unitInAction = null, actionPos = null, colOrange = false, colRed = false;
-        let globalActive = false;
 
         for (let id in markers) { map.removeLayer(markers[id]); } markers = {}; 
         const mySafeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
@@ -144,14 +153,15 @@
         for (let id in data) { 
             const v = data[id]; const isMe = (id === mySafeId);
             if (now - v.ts > 15000) continue; 
-            if (v.active) globalActive = true;
 
             const displayName = v.label || id.replace(/_/g, ' '); 
+            
             if (!isMe && myPos) {
                 const dist = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
                 if (dist < 250) colRed = true;
                 else if (dist < 500) colOrange = true;
 
+                // On affiche les autres si je suis en mode rejoint OU s'ils sont en PEC
                 if (isVisible || v.active) {
                     const icon = (dist < 500) ? dangerIcon : (v.active ? gyroIcon : new L.Icon.Default());
                     markers[id] = L.marker([v.lat, v.lon], { icon }).addTo(map)
@@ -161,22 +171,21 @@
             if (v.active) { unitInAction = displayName; actionPos = [v.lat, v.lon]; } 
         }
 
-        // SYNCHRONISATION DU BOUTON REJOINDRE
-        if (globalActive || isVisible) {
-            btnSignal.classList.add('active');
-            btnSignal.innerText = "✅ REJOINT";
-        } else {
-            btnSignal.classList.remove('active');
-            btnSignal.innerText = "📡 REJOINDRE LE DISPOSITIF";
-        }
-
-        // GESTION DES HALOS
         const cont = document.getElementById('map-container');
-        cont.classList.toggle('halo-red', colRed);
-        cont.classList.toggle('halo-orange', !colRed && colOrange);
+        cont.classList.remove('halo-orange', 'halo-red');
+        if (colRed) cont.classList.add('halo-red');
+        else if (colOrange) cont.classList.add('halo-orange');
 
         myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
-        if (actionPos) map.setView(actionPos, 17);
+        
+        // ZOOM : On centre sur l'action SEULEMENT si je participe ou si je suis l'auteur
+        if (actionPos && (isVisible || isPEC)) {
+            map.setView(actionPos, 17);
+        } else if (myPos && firstFix) {
+            map.setView([myPos.lat, myPos.lon], 17);
+            firstFix = false;
+        }
+
         const header = document.getElementById('main-header');
         header.innerText = unitInAction ? "🚨 " + unitInAction.toUpperCase() : "TACTICAL DEPLOY";
         header.className = unitInAction ? "header-alert" : "";
