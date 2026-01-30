@@ -8,16 +8,27 @@
     <style>
         :root {
             --bg-dark: #121212; --panel-bg: #1e1e1e; --accent-red: #e74c3c;
-            --accent-blue: #3498db; --accent-green: #2ecc71; --accent-purple: #9b59b6;
+            --accent-blue: #3498db; --accent-green: #2ecc71; --accent-orange: #f39c12;
         }
-        body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-dark); color: #e0e0e0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-dark); color: #e0e0e0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; transition: box-shadow 0.3s; }
         
+        /* Alerte Anti-Collision : Bordure de l'écran */
+        body.proximity-alert {
+            box-shadow: inset 0 0 30px 10px var(--accent-orange);
+            animation: collision-glow 0.8s infinite alternate;
+        }
+        @keyframes collision-glow {
+            from { box-shadow: inset 0 0 20px 5px var(--accent-orange); }
+            to { box-shadow: inset 0 0 40px 15px var(--accent-orange); }
+        }
+
         #main-header {
             width: 80%; margin: 12px auto; text-align: center; padding: 12px; 
             border: 1px solid rgba(231, 76, 60, 0.5); color: var(--accent-red);
             font-weight: 800; background: rgba(30, 30, 30, 0.9); border-radius: 12px;
             text-transform: uppercase; letter-spacing: 3px; font-size: 1.1rem; min-height: 24px;
             transition: all 0.4s; box-shadow: 0 4px 15px rgba(0,0,0,0.5); backdrop-filter: blur(5px);
+            z-index: 1001;
         }
 
         .header-alert { background: var(--accent-red) !important; color: white !important; border-color: white !important; animation: pulse-header 0.6s infinite alternate; }
@@ -47,10 +58,19 @@
         input { width: 100%; padding: 14px; background: #252525; border: 1px solid #3d3d3d; color: white; border-radius: 8px; margin-bottom: 12px; box-sizing: border-box; }
         #map { flex-grow: 1; width: 100%; background: #1a1a1a; }
 
-        .police-icon { background: #2c3e50; border: 2px solid white; border-radius: 4px; width: 32px !important; height: 18px !important; }
+        .police-icon { background: #2c3e50; border: 2px solid white; border-radius: 4px; width: 32px !important; height: 18px !important; position: relative; }
         .police-icon::after { content: ''; position: absolute; top: -7px; left: 50%; transform: translateX(-50%); width: 14px; height: 14px; border-radius: 50%; animation: gyro-flash 0.4s infinite alternate; }
         @keyframes gyro-flash { 0% { background: #ff0000; box-shadow: 0 0 15px #ff0000; } 100% { background: #0044ff; box-shadow: 0 0 15px #0044ff; } }
         
+        /* Icône de danger pour anti-collision */
+        .danger-marker {
+            background: none; border: none;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 24px; filter: drop-shadow(0 0 5px black);
+            animation: bounce 0.5s infinite alternate;
+        }
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+
         .tactical-tooltip { background: rgba(0,0,0,0.8); color: white; border: 1px solid var(--accent-blue); font-weight: bold; }
     </style>
 </head>
@@ -77,16 +97,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-    // --- CONFIGURATION WHATSAPP ---
-    const WHATSAPP_PHONE = "336XXXXXXXX"; 
-    const WHATSAPP_API_KEY = "VOTRE_CLE_ICI"; 
-
-    function alerteWhatsApp(nom) {
-        const texte = `🚨 *ALERTE TACTICAL* 🚨\n\nL'unité *${nom}* est en PRISE EN CHARGE !`;
-        const url = `https://api.callmebot.com/whatsapp.php?phone=${WHATSAPP_PHONE}&text=${encodeURIComponent(texte)}&apikey=${WHATSAPP_API_KEY}`;
-        fetch(url, { mode: 'no-cors' }).catch(e => console.log("Erreur WhatsApp"));
-    }
-
     const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
@@ -106,64 +116,109 @@
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false, isLockedForMsg = false, altToggle = false, lastAnnouncedUnit = null;
+    
     const gyroIcon = L.divIcon({ className: 'police-icon', iconSize: [32, 18], iconAnchor: [16, 9] });
+    const dangerIcon = L.divIcon({ className: 'danger-marker', html: '⚠️', iconSize: [30, 30], iconAnchor: [15, 30] });
+
+    let myPos = null, isVisible = false, isPEC = false, myStream = null, firstFix = true;
+    let markers = {}; 
+    const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
+
+    function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3;
+        const φ1 = lat1 * Math.PI/180; const φ2 = lat2 * Math.PI/180;
+        const Δφ = (lat2-lat1) * Math.PI/180; const Δλ = (lon2-lon1) * Math.PI/180;
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function sendUpdate() { 
+        if (!myPos) return; 
+        const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_"); 
+        if (isVisible || isPEC) { 
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now(), label: myName }); 
+        } else { db.ref('vehicles/' + safeId).remove(); } 
+    }
+
+    setInterval(() => { if (isVisible || isPEC) sendUpdate(); }, 3000);
 
     document.getElementById('btn-pec').onclick = function() {
         isPEC = !isPEC;
         this.classList.toggle('active');
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        if (isPEC) { 
-            isVisible = true; 
-            document.getElementById('btn-signal').classList.add('active'); 
-            document.getElementById('btn-signal').innerText = "✅ DISPOSITIF REJOINT";
-            alerteWhatsApp(myName); 
-        }
+        if (isPEC) { isVisible = true; document.getElementById('btn-signal').classList.add('active'); document.getElementById('btn-signal').innerText = "✅ REJOINT"; }
         sendUpdate();
     };
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playBip() { if (audioCtx.state === 'suspended') audioCtx.resume(); const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination); osc.frequency.setValueAtTime(880, audioCtx.currentTime); gain.gain.setValueAtTime(0.2, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.15); }
+    function playBip(freq = 880) { if (audioCtx.state === 'suspended') audioCtx.resume(); const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination); osc.frequency.setValueAtTime(freq, audioCtx.currentTime); gain.gain.setValueAtTime(0.2, audioCtx.currentTime); osc.start(); osc.stop(audioCtx.currentTime + 0.15); }
     document.getElementById('btn-sat').onclick = function() { if (!isSat) { map.removeLayer(osm); map.addLayer(sat); } else { map.removeLayer(sat); map.addLayer(osm); } isSat = !isSat; };
     document.getElementById('btn-reset').onclick = function() { if(confirm("Effacer toutes les positions ?")) { db.ref('vehicles').remove(); lastAnnouncedUnit = null; } };
-    let myPos = null, isVisible = false, isPEC = false, myStream = null, firstFix = true;
-    let markers = {}; const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
     function speak(text) { if (!window.speechSynthesis) return; window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.lang = 'fr-FR'; window.speechSynthesis.speak(utterance); }
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) { const recognition = new SpeechRecognition(); recognition.lang = 'fr-FR'; document.getElementById('btn-dict').onclick = () => { try { recognition.start(); header.innerText = "ÉCOUTE..."; } catch(e) {} }; recognition.onresult = (event) => { const msg = event.results[0][0].transcript; db.ref('last_msg').set({ from: myName, text: msg, ts: Date.now() }); }; }
-    const peer = new Peer(myName.replace(/[^a-zA-Z0-9]/g, ""));
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(st => { myStream = st; myStream.getAudioTracks()[0].enabled = false; });
-    document.getElementById('btn-vocal').onclick = function() { if(!myStream) return; const active = myStream.getAudioTracks()[0].enabled; myStream.getAudioTracks()[0].enabled = !active; this.innerText = !active ? "🎙️ ON" : "🎙️ LIVE"; this.classList.toggle('on'); };
-    function sendUpdate() { if (!myPos) return; const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_"); if (isVisible || isPEC) { db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now(), label: myName }); } else { db.ref('vehicles/' + safeId).remove(); } }
+    
     document.getElementById('btn-signal').onclick = function() { if (audioCtx.state === 'suspended') audioCtx.resume(); isVisible = !isVisible; this.classList.toggle('active'); this.innerText = isVisible ? "✅ REJOINT" : "📡 REJOINDRE"; sendUpdate(); };
     
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {}; const data = root.vehicles || {}; const lastMsg = root.last_msg || {}; const now = Date.now();
-        let unitInAction = null; let actionPos = null;
-        if (lastMsg.ts && lastMsg.from !== myName) { if (!window.lastShownTs || window.lastShownTs !== lastMsg.ts) { window.lastShownTs = lastMsg.ts; isLockedForMsg = true; header.innerText = lastMsg.from.toUpperCase() + " : " + lastMsg.text; header.className = "header-msg"; setTimeout(() => speak(lastMsg.from + " dit " + lastMsg.text), 100); setTimeout(() => { isLockedForMsg = false; header.className = ""; db.ref('last_msg').remove(); }, 7000); } }
+        let unitInAction = null; let actionPos = null; let collisionDetected = false;
+        
         for (let id in markers) { map.removeLayer(markers[id]); } markers = {}; 
         const mySafeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
+        
         for (let id in data) { 
-            const v = data[id]; 
-            if (now - v.ts > 10000) continue; 
+            const v = data[id]; const isMe = (id === mySafeId);
+            if (now - v.ts > 15000) continue; 
             const displayName = v.label || id.replace(/_/g, ' '); 
-            const isMe = (id === mySafeId);
+            
+            let isClose = false;
+            if (!isMe && myPos) {
+                const dist = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
+                if (dist < 500) { collisionDetected = true; isClose = true; }
+            }
+
             if (v.active) { 
-                unitInAction = displayName; 
-                actionPos = [v.lat, v.lon]; 
+                unitInAction = displayName; actionPos = [v.lat, v.lon]; 
                 if (lastAnnouncedUnit !== displayName && !isMe) { speak("Alerte. " + displayName + " démarre."); lastAnnouncedUnit = displayName; } 
             } 
+
             if (!isMe && (isVisible || v.active)) { 
-                const m = L.marker([v.lat, v.lon], v.active ? { icon: gyroIcon } : {}).addTo(map);
+                // Si collision : on met l'icône danger au lieu ou en plus de la voiture
+                const currentIcon = isClose ? dangerIcon : (v.active ? gyroIcon : new L.Icon.Default());
+                const m = L.marker([v.lat, v.lon], { icon: currentIcon }).addTo(map);
                 m.bindTooltip(displayName, { permanent: true, direction: 'top', className: 'tactical-tooltip', offset: [0, -10] });
                 markers[id] = m;
             } 
         }
-        if (!unitInAction) lastAnnouncedUnit = null;
+
+        // Activation visuelle de la bordure d'alerte
+        if (collisionDetected) {
+            document.body.classList.add('proximity-alert');
+            if (Date.now() % 2000 < 100) playBip(440); // Bip discret toutes les 2s
+        } else {
+            document.body.classList.remove('proximity-alert');
+        }
+
         myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
         if (actionPos) { map.setView(actionPos, map.getZoom() < 15 ? 17 : map.getZoom()); }
-        if (!isLockedForMsg) { if (unitInAction) { if (header.className !== "header-alert") playBip(); header.className = "header-alert"; altToggle = !altToggle; header.innerText = altToggle ? "🚨 " + unitInAction.toUpperCase() : "PRISE EN CHARGE"; } else { header.innerText = "TACTICAL DEPLOY"; header.className = ""; } }
+
+        if (!isLockedForMsg) {
+            if (unitInAction) {
+                if (header.className !== "header-alert") playBip(880);
+                header.className = "header-alert";
+                altToggle = !altToggle;
+                header.innerText = altToggle ? "🚨 " + unitInAction.toUpperCase() : "PRISE EN CHARGE";
+            } else {
+                header.innerText = "TACTICAL DEPLOY";
+                header.className = "";
+            }
+        }
     });
-    navigator.geolocation.watchPosition((p) => { myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; myMarker.setLatLng([myPos.lat, myPos.lon]); if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; } if (isVisible || isPEC) sendUpdate(); }, null, { enableHighAccuracy: true });
+
+    navigator.geolocation.watchPosition((p) => { 
+        myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; 
+        myMarker.setLatLng([myPos.lat, myPos.lon]); 
+        if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; } 
+    }, null, { enableHighAccuracy: true });
 </script>
 </body>
 </html>
