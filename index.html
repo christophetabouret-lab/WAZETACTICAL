@@ -161,13 +161,13 @@
             if (v.active) { unitInAction = displayName; actionPos = [v.lat, v.lon]; } 
         }
 
-        // FORCE LE RETOUR AU BLEU SI PLUS D'INTERCEPTION EN COURS
+        // SYNCHRONISATION GLOBALE : Si plus d'interception, tout le monde repasse au bleu
         if (!anyInterceptionActive) {
             isVisible = false;
             isPEC = false;
         }
 
-        // MISE À JOUR VISUELLE DES BOUTONS
+        // Mise à jour de l'interface utilisateur
         btnSignal.classList.toggle('active', isVisible);
         btnSignal.innerText = isVisible ? "✅ REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
         btnPec.classList.toggle('active', isPEC);
