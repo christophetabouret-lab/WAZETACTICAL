@@ -121,31 +121,21 @@
 
     btnPec.onclick = function() {
         isPEC = !isPEC;
-        isVisible = isPEC ? true : isVisible; // Si j'active PEC, je rejoins forcément
-        this.classList.toggle('active', isPEC);
-        this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        updateUI();
+        if (isPEC) isVisible = true;
         sendUpdate();
     };
 
     btnSignal.onclick = () => { 
         isVisible = !isVisible; 
-        if (!isVisible) isPEC = false; // Si je quitte le dispositif, j'arrête ma PEC
-        updateUI();
+        if (!isVisible) isPEC = false; 
         sendUpdate(); 
     };
-
-    function updateUI() {
-        btnSignal.classList.toggle('active', isVisible);
-        btnSignal.innerText = isVisible ? "✅ REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
-        btnPec.classList.toggle('active', isPEC);
-        btnPec.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-    }
 
     db.ref('vehicles').on('value', (snapshot) => {
         const data = snapshot.val() || {};
         const now = Date.now();
         let unitInAction = null, actionPos = null, colOrange = false, colRed = false;
+        let anyInterceptionActive = false;
 
         for (let id in markers) { map.removeLayer(markers[id]); } markers = {}; 
         const mySafeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
@@ -153,6 +143,7 @@
         for (let id in data) { 
             const v = data[id]; const isMe = (id === mySafeId);
             if (now - v.ts > 15000) continue; 
+            if (v.active) anyInterceptionActive = true;
 
             const displayName = v.label || id.replace(/_/g, ' '); 
             
@@ -161,7 +152,6 @@
                 if (dist < 250) colRed = true;
                 else if (dist < 500) colOrange = true;
 
-                // On affiche les autres si je suis en mode rejoint OU s'ils sont en PEC
                 if (isVisible || v.active) {
                     const icon = (dist < 500) ? dangerIcon : (v.active ? gyroIcon : new L.Icon.Default());
                     markers[id] = L.marker([v.lat, v.lon], { icon }).addTo(map)
@@ -171,6 +161,18 @@
             if (v.active) { unitInAction = displayName; actionPos = [v.lat, v.lon]; } 
         }
 
+        // FORCE LE RETOUR AU BLEU SI PLUS D'INTERCEPTION EN COURS
+        if (!anyInterceptionActive) {
+            isVisible = false;
+            isPEC = false;
+        }
+
+        // MISE À JOUR VISUELLE DES BOUTONS
+        btnSignal.classList.toggle('active', isVisible);
+        btnSignal.innerText = isVisible ? "✅ REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
+        btnPec.classList.toggle('active', isPEC);
+        btnPec.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
+
         const cont = document.getElementById('map-container');
         cont.classList.remove('halo-orange', 'halo-red');
         if (colRed) cont.classList.add('halo-red');
@@ -178,8 +180,7 @@
 
         myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
         
-        // ZOOM : On centre sur l'action SEULEMENT si je participe ou si je suis l'auteur
-        if (actionPos && (isVisible || isPEC)) {
+        if (actionPos && isVisible) {
             map.setView(actionPos, 17);
         } else if (myPos && firstFix) {
             map.setView([myPos.lat, myPos.lon], 17);
