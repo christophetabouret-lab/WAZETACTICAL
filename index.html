@@ -103,6 +103,7 @@
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false, isLockedForMsg = false, altToggle = false;
+    let lastAnnouncedUnit = null; // Verrou pour l'annonce vocale
 
     const gyroIcon = L.divIcon({ className: 'police-icon', iconSize: [30, 16], iconAnchor: [15, 8] });
 
@@ -126,6 +127,7 @@
     document.getElementById('btn-reset').onclick = function() {
         if(confirm("Effacer toutes les positions du dispositif ?")) {
             db.ref('vehicles').remove();
+            lastAnnouncedUnit = null;
         }
     };
 
@@ -169,7 +171,6 @@
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
         if (isVisible || isPEC) {
-            // Ajout de 'label' pour envoyer le nom réel
             db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now(), label: myName });
         } else { db.ref('vehicles/' + safeId).remove(); }
     }
@@ -229,8 +230,14 @@
             const displayName = v.label || id.replace(/_/g, ' ');
 
             if (v.active) {
-                unitInAction = displayName; // Utilise maintenant le nom réel
+                unitInAction = displayName;
                 actionPos = [v.lat, v.lon];
+                
+                // Annonce vocale de l'alerte (si nouvelle unité ou premier déclenchement)
+                if (lastAnnouncedUnit !== displayName && displayName !== myName) {
+                    speak("Alerte. " + displayName + " démarre une interception.");
+                    lastAnnouncedUnit = displayName;
+                }
             }
 
             if (id !== mySafeId && (isVisible || v.active)) {
@@ -238,6 +245,9 @@
                     .bindTooltip(displayName, { permanent: v.active, direction: 'top' });
             }
         }
+
+        // Reset du verrou d'annonce si plus personne n'est en action
+        if (!unitInAction) lastAnnouncedUnit = null;
 
         myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
 
