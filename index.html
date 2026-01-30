@@ -30,18 +30,14 @@
 
         #map { height: 100%; width: 100%; background: #1a1a1a; }
 
-        /* Halos tactiques latéraux */
         .vigilance-halo {
             position: absolute; top: 0; bottom: 0; width: 60px;
             z-index: 1000; pointer-events: none; display: none;
             animation: halo-pulse 0.8s infinite alternate;
         }
         
-        /* État Orange (Vigilance) */
         .halo-orange #halo-left { background: linear-gradient(to right, rgba(243, 156, 18, 0.7), transparent); }
         .halo-orange #halo-right { background: linear-gradient(to left, rgba(243, 156, 18, 0.7), transparent); }
-        
-        /* État Rouge (Danger Immédiat) */
         .halo-red #halo-left { background: linear-gradient(to right, rgba(231, 76, 60, 0.8), transparent); }
         .halo-red #halo-right { background: linear-gradient(to left, rgba(231, 76, 60, 0.8), transparent); }
 
@@ -157,7 +153,18 @@
         isPEC = !isPEC;
         this.classList.toggle('active');
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        if (isPEC) { isVisible = true; document.getElementById('btn-signal').classList.add('active'); document.getElementById('btn-signal').innerText = "✅ REJOINT"; }
+        
+        const btnSignal = document.getElementById('btn-signal');
+        if (isPEC) { 
+            isVisible = true; 
+            btnSignal.classList.add('active'); 
+            btnSignal.innerText = "✅ REJOINT"; 
+        } else {
+            // Repasse au bleu pour tout le monde quand on clique sur STOP
+            isVisible = false;
+            btnSignal.classList.remove('active');
+            btnSignal.innerText = "📡 REJOINDRE LE DISPOSITIF";
+        }
         sendUpdate();
     };
 
@@ -197,18 +204,11 @@
 
         const container = document.getElementById('map-container');
         const halos = document.querySelectorAll('.vigilance-halo');
-        
         container.classList.remove('halo-orange', 'halo-red');
         
-        if (collisionRed) {
-            container.classList.add('halo-red');
-            halos.forEach(h => h.style.display = 'block');
-        } else if (collisionOrange) {
-            container.classList.add('halo-orange');
-            halos.forEach(h => h.style.display = 'block');
-        } else {
-            halos.forEach(h => h.style.display = 'none');
-        }
+        if (collisionRed) { container.classList.add('halo-red'); halos.forEach(h => h.style.display = 'block'); }
+        else if (collisionOrange) { container.classList.add('halo-orange'); halos.forEach(h => h.style.display = 'block'); }
+        else { halos.forEach(h => h.style.display = 'none'); }
 
         myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
         if (actionPos) { map.setView(actionPos, map.getZoom() < 15 ? 17 : map.getZoom()); }
