@@ -6,56 +6,167 @@
     <title>TACTICAL DEPLOY</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
+        :root {
+            --bg-dark: #121212;
+            --panel-bg: #1e1e1e;
+            --accent-red: #e74c3c;
+            --accent-blue: #3498db;
+            --accent-green: #2ecc71;
+            --accent-purple: #9b59b6;
+            --text-main: #e0e0e0;
+        }
+
+        body { 
+            margin: 0; 
+            font-family: 'Inter', 'Segoe UI', Roboto, sans-serif; 
+            background: var(--bg-dark); 
+            color: var(--text-main); 
+            overflow: hidden; 
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
         
+        /* Titre modernisé - Toujours 80% */
         #main-header {
-            width: 80%; margin: 10px auto; text-align: center;
-            padding: 15px; border: 2px solid #e74c3c; color: #e74c3c;
-            font-weight: bold; background: #2c2c2c; border-radius: 8px;
-            text-transform: uppercase; letter-spacing: 2px;
-            font-size: 1.2rem; min-height: 30px; transition: all 0.3s;
+            width: 80%; 
+            margin: 12px auto; 
+            text-align: center;
+            padding: 12px; 
+            border: 1px solid rgba(231, 76, 60, 0.5); 
+            color: var(--accent-red);
+            font-weight: 800; 
+            background: rgba(30, 30, 30, 0.9); 
+            border-radius: 12px;
+            text-transform: uppercase; 
+            letter-spacing: 3px;
+            font-size: 1.1rem; 
+            min-height: 24px; 
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
         }
 
         .header-alert { 
-            background: #ff0000 !important; color: white !important; 
-            border: 3px solid white !important;
-            animation: pulse-header 0.8s infinite alternate;
+            background: var(--accent-red) !important; 
+            color: white !important; 
+            border-color: white !important;
+            animation: pulse-header 0.6s infinite alternate;
+            box-shadow: 0 0 20px rgba(231, 76, 60, 0.6);
         }
-        .header-msg { background: #3498db !important; color: white !important; border: 2px solid white !important; }
+        
+        .header-msg { 
+            background: var(--accent-blue) !important; 
+            color: white !important; 
+            border-color: white !important; 
+        }
 
         @keyframes pulse-header { 
-            0% { opacity: 1; transform: scale(1); }
-            100% { opacity: 0.7; transform: scale(1.02); }
+            0% { transform: scale(1); filter: brightness(1); }
+            100% { transform: scale(1.02); filter: brightness(1.2); }
         }
 
-        #ui-panel { padding: 5px 15px; background: #2c2c2c; z-index: 1000; position: relative; }
-        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.7rem; }
+        /* Panneau de contrôle ergonomique */
+        #ui-panel { 
+            padding: 10px 15px 15px; 
+            background: var(--panel-bg); 
+            z-index: 1000; 
+            border-top: 1px solid #333;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.4);
+        }
+
+        .input-container { margin-bottom: 12px; }
+
+        input { 
+            width: 100%; 
+            padding: 14px; 
+            background: #252525; 
+            border: 1px solid #3d3d3d; 
+            color: white; 
+            border-radius: 8px; 
+            box-sizing: border-box; 
+            font-size: 14px;
+            font-weight: 600;
+            outline: none;
+            transition: border 0.3s;
+        }
+        input:focus { border-color: var(--accent-blue); }
+
+        .btn-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 10px; 
+        }
+
+        button { 
+            padding: 14px 10px; 
+            border: none; 
+            border-radius: 8px; 
+            font-weight: 700; 
+            cursor: pointer; 
+            color: white; 
+            text-transform: uppercase; 
+            font-size: 0.75rem; 
+            transition: all 0.2s active;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
         
-        #btn-vocal { background: #34495e; } #btn-vocal.on { background: #2ecc71; }
-        #btn-dict { background: #8e44ad; } 
-        #btn-signal { background: #3498db; grid-column: span 2; height: 45px; font-size: 0.8rem; }
-        #btn-signal.active { background: #2ecc71; }
-        #btn-pec { background: #e67e22; grid-column: span 2; height: 45px; font-size: 0.9rem; }
-        #btn-pec.active { background: #c0392b; }
-        #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
-        #btn-reset { background: #6c5ce7; height: 35px; }
+        button:active { transform: scale(0.96); }
 
-        input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 5px; box-sizing: border-box; }
-        #map { height: calc(100vh - 360px); width: 100%; background: #222; }
+        #btn-vocal { background: #3d3d3d; border-bottom: 3px solid #222; } 
+        #btn-vocal.on { background: var(--accent-green); border-bottom-color: #27ae60; }
+        
+        #btn-dict { background: var(--accent-purple); border-bottom: 3px solid #8e44ad; } 
+        
+        #btn-signal { 
+            background: var(--accent-blue); 
+            grid-column: span 2; 
+            height: 50px; 
+            font-size: 0.85rem;
+            border-bottom: 4px solid #2980b9;
+        }
+        #btn-signal.active { background: var(--accent-green); border-bottom-color: #27ae60; }
+        
+        #btn-pec { 
+            background: #d35400; 
+            grid-column: span 2; 
+            height: 55px; 
+            font-size: 0.95rem; 
+            border-bottom: 4px solid #a04000;
+            margin-top: 2px;
+        }
+        #btn-pec.active { background: #c0392b; animation: danger-pulse 1.5s infinite; }
 
+        @keyframes danger-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(192, 57, 43, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0); }
+        }
+
+        #btn-sat { background: #2c3e50; border-bottom: 3px solid #1a252f; }
+        #btn-reset { background: #5a5a5a; border-bottom: 3px solid #333; }
+
+        /* Carte optimisée */
+        #map { flex-grow: 1; width: 100%; background: #1a1a1a; }
+
+        /* Style Gyrophare */
         .police-icon {
-            background: #34495e; border: 2px solid white; border-radius: 3px;
-            width: 30px !important; height: 16px !important;
+            background: #2c3e50; border: 2px solid white; border-radius: 4px;
+            width: 32px !important; height: 18px !important;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
         .police-icon::after {
-            content: ''; position: absolute; top: -6px; left: 50%;
-            transform: translateX(-50%); width: 12px; height: 12px;
+            content: ''; position: absolute; top: -7px; left: 50%;
+            transform: translateX(-50%); width: 14px; height: 14px;
             border-radius: 50%; animation: gyro-flash 0.4s infinite alternate;
         }
         @keyframes gyro-flash {
-            0% { background: red; box-shadow: 0 0 10px red; }
-            100% { background: blue; box-shadow: 0 0 12px blue; }
+            0% { background: #ff0000; box-shadow: 0 0 15px #ff0000; }
+            100% { background: #0044ff; box-shadow: 0 0 15px #0044ff; }
         }
     </style>
 </head>
@@ -63,8 +174,12 @@
 
 <div id="main-header">TACTICAL DEPLOY</div>
 
+<div id="map"></div>
+
 <div id="ui-panel">
-    <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
+    <div class="input-container">
+        <input type="text" id="user-id" placeholder="IDENTIFIANT UNITÉ" spellcheck="false">
+    </div>
     <div class="btn-grid">
         <button id="btn-vocal">🎙️ LIVE VOCAL</button>
         <button id="btn-dict">🗣️ DICTER MSG</button>
@@ -74,8 +189,6 @@
         <button id="btn-reset">🧹 RESET DATA</button>
     </div>
 </div>
-
-<div id="map"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
@@ -99,13 +212,13 @@
     };
 
     const header = document.getElementById('main-header');
-    const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
+    const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([0, 0], 2);
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false, isLockedForMsg = false, altToggle = false;
-    let lastAnnouncedUnit = null; // Verrou pour l'annonce vocale
+    let lastAnnouncedUnit = null;
 
-    const gyroIcon = L.divIcon({ className: 'police-icon', iconSize: [30, 16], iconAnchor: [15, 8] });
+    const gyroIcon = L.divIcon({ className: 'police-icon', iconSize: [32, 18], iconAnchor: [16, 9] });
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playBip() {
@@ -147,7 +260,7 @@
     if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
         recognition.lang = 'fr-FR';
-        document.getElementById('btn-dict').onclick = () => { try { recognition.start(); header.innerText = "ÉCOUTE..."; } catch(e) {} };
+        document.getElementById('btn-dict').onclick = () => { try { recognition.start(); header.innerText = "ÉCOUTE EN COURS..."; } catch(e) {} };
         recognition.onresult = (event) => {
             const msg = event.results[0][0].transcript;
             db.ref('last_msg').set({ from: myName, text: msg, ts: Date.now() });
@@ -232,8 +345,6 @@
             if (v.active) {
                 unitInAction = displayName;
                 actionPos = [v.lat, v.lon];
-                
-                // Annonce vocale de l'alerte (si nouvelle unité ou premier déclenchement)
                 if (lastAnnouncedUnit !== displayName && displayName !== myName) {
                     speak("Alerte. " + displayName + " démarre une interception.");
                     lastAnnouncedUnit = displayName;
@@ -242,11 +353,10 @@
 
             if (id !== mySafeId && (isVisible || v.active)) {
                 markers[id] = L.marker([v.lat, v.lon], v.active ? { icon: gyroIcon } : {}).addTo(map)
-                    .bindTooltip(displayName, { permanent: v.active, direction: 'top' });
+                    .bindTooltip(displayName, { permanent: v.active, direction: 'top', className: 'tactical-tooltip' });
             }
         }
 
-        // Reset du verrou d'annonce si plus personne n'est en action
         if (!unitInAction) lastAnnouncedUnit = null;
 
         myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
@@ -260,7 +370,7 @@
                 if (header.className !== "header-alert") playBip();
                 header.className = "header-alert";
                 altToggle = !altToggle;
-                header.innerText = altToggle ? "🚨 " + unitInAction.toUpperCase() : "POURSUITE EN COURS";
+                header.innerText = altToggle ? "🚨 " + unitInAction.toUpperCase() : "PRISE EN CHARGE";
             } else {
                 header.innerText = "TACTICAL DEPLOY";
                 header.className = "";
