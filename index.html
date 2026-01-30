@@ -11,28 +11,8 @@
             --accent-blue: #3498db; --accent-green: #2ecc71; --accent-purple: #9b59b6;
             --accent-orange: #f39c12;
         }
-        body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-dark); color: #e0e0e0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; position: relative; }
+        body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-dark); color: #e0e0e0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
         
-        /* Halos latéraux de Vigilance */
-        .vigilance-halo {
-            position: absolute; top: 0; bottom: 0; width: 40px;
-            z-index: 9999; pointer-events: none; display: none;
-            animation: halo-pulse 0.8s infinite alternate;
-        }
-        #halo-left { 
-            left: 0; 
-            background: linear-gradient(to right, rgba(243, 156, 18, 0.8), transparent); 
-        }
-        #halo-right { 
-            right: 0; 
-            background: linear-gradient(to left, rgba(243, 156, 18, 0.8), transparent); 
-        }
-
-        @keyframes halo-pulse {
-            from { opacity: 0.3; filter: blur(5px); }
-            to { opacity: 1; filter: blur(15px); }
-        }
-
         #main-header {
             width: 80%; margin: 12px auto; text-align: center; padding: 12px; 
             border: 1px solid rgba(231, 76, 60, 0.5); color: var(--accent-red);
@@ -41,10 +21,40 @@
             z-index: 1001;
         }
 
+        /* Conteneur de la carte pour isoler les halos */
+        #map-container {
+            position: relative;
+            flex-grow: 1;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        #map { height: 100%; width: 100%; background: #1a1a1a; }
+
+        /* Halos tactiques strictement sur les côtés de la carte */
+        .vigilance-halo {
+            position: absolute; top: 0; bottom: 0; width: 60px;
+            z-index: 1000; pointer-events: none; display: none;
+            animation: halo-pulse 0.8s infinite alternate;
+        }
+        #halo-left { 
+            left: 0; 
+            background: linear-gradient(to right, rgba(243, 156, 18, 0.7), transparent); 
+        }
+        #halo-right { 
+            right: 0; 
+            background: linear-gradient(to left, rgba(243, 156, 18, 0.7), transparent); 
+        }
+
+        @keyframes halo-pulse {
+            from { opacity: 0.4; }
+            to { opacity: 1; }
+        }
+
         .header-alert { background: var(--accent-red) !important; color: white !important; border-color: white !important; }
         .header-msg { background: var(--accent-blue) !important; color: white !important; border-color: white !important; }
 
-        #ui-panel { padding: 10px 15px 15px; background: var(--panel-bg); z-index: 1000; border-top: 1px solid #333; }
+        #ui-panel { padding: 10px 15px 15px; background: var(--panel-bg); z-index: 1001; border-top: 1px solid #333; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         
         button { padding: 14px 10px; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 6px; }
@@ -60,7 +70,6 @@
 
         #btn-sat { background: #2c3e50; } #btn-reset { background: #5a5a5a; }
         input { width: 100%; padding: 14px; background: #252525; border: 1px solid #3d3d3d; color: white; border-radius: 8px; margin-bottom: 12px; box-sizing: border-box; }
-        #map { flex-grow: 1; width: 100%; background: #1a1a1a; }
 
         .police-icon { background: #2c3e50; border: 2px solid white; border-radius: 4px; width: 32px !important; height: 18px !important; position: relative; }
         .police-icon::after { content: ''; position: absolute; top: -7px; left: 50%; transform: translateX(-50%); width: 14px; height: 14px; border-radius: 50%; animation: gyro-flash 0.4s infinite alternate; }
@@ -74,11 +83,13 @@
 </head>
 <body>
 
-<div id="halo-left" class="vigilance-halo"></div>
-<div id="halo-right" class="vigilance-halo"></div>
-
 <div id="main-header">TACTICAL DEPLOY</div>
-<div id="map"></div>
+
+<div id="map-container">
+    <div id="halo-left" class="vigilance-halo"></div>
+    <div id="halo-right" class="vigilance-halo"></div>
+    <div id="map"></div>
+</div>
 
 <div id="ui-panel">
     <input type="text" id="user-id" placeholder="IDENTIFIANT UNITÉ" spellcheck="false">
