@@ -21,7 +21,6 @@
             z-index: 1001;
         }
 
-        /* Conteneur de la carte pour isoler les halos */
         #map-container {
             position: relative;
             flex-grow: 1;
@@ -31,25 +30,22 @@
 
         #map { height: 100%; width: 100%; background: #1a1a1a; }
 
-        /* Halos tactiques strictement sur les côtés de la carte */
+        /* Halos tactiques latéraux */
         .vigilance-halo {
             position: absolute; top: 0; bottom: 0; width: 60px;
             z-index: 1000; pointer-events: none; display: none;
             animation: halo-pulse 0.8s infinite alternate;
         }
-        #halo-left { 
-            left: 0; 
-            background: linear-gradient(to right, rgba(243, 156, 18, 0.7), transparent); 
-        }
-        #halo-right { 
-            right: 0; 
-            background: linear-gradient(to left, rgba(243, 156, 18, 0.7), transparent); 
-        }
+        
+        /* État Orange (Vigilance) */
+        .halo-orange #halo-left { background: linear-gradient(to right, rgba(243, 156, 18, 0.7), transparent); }
+        .halo-orange #halo-right { background: linear-gradient(to left, rgba(243, 156, 18, 0.7), transparent); }
+        
+        /* État Rouge (Danger Immédiat) */
+        .halo-red #halo-left { background: linear-gradient(to right, rgba(231, 76, 60, 0.8), transparent); }
+        .halo-red #halo-right { background: linear-gradient(to left, rgba(231, 76, 60, 0.8), transparent); }
 
-        @keyframes halo-pulse {
-            from { opacity: 0.4; }
-            to { opacity: 1; }
-        }
+        @keyframes halo-pulse { from { opacity: 0.4; } to { opacity: 1; } }
 
         .header-alert { background: var(--accent-red) !important; color: white !important; border-color: white !important; }
         .header-msg { background: var(--accent-blue) !important; color: white !important; border-color: white !important; }
@@ -109,16 +105,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-    // --- CONFIG WHATSAPP ---
-    const WHATSAPP_PHONE = "336XXXXXXXX"; 
-    const WHATSAPP_API_KEY = "VOTRE_CLE_ICI"; 
-
-    function alerteWhatsApp(nom) {
-        const texte = `🚨 *ALERTE TACTICAL* 🚨\n\nL'unité *${nom}* est en PRISE EN CHARGE !`;
-        const url = `https://api.callmebot.com/whatsapp.php?phone=${WHATSAPP_PHONE}&text=${encodeURIComponent(texte)}&apikey=${WHATSAPP_API_KEY}`;
-        fetch(url, { mode: 'no-cors' }).catch(e => console.log("Erreur WhatsApp"));
-    }
-
     const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
@@ -171,7 +157,7 @@
         isPEC = !isPEC;
         this.classList.toggle('active');
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        if (isPEC) { isVisible = true; document.getElementById('btn-signal').classList.add('active'); document.getElementById('btn-signal').innerText = "✅ REJOINT"; alerteWhatsApp(myName); }
+        if (isPEC) { isVisible = true; document.getElementById('btn-signal').classList.add('active'); document.getElementById('btn-signal').innerText = "✅ REJOINT"; }
         sendUpdate();
     };
 
@@ -182,7 +168,7 @@
 
     db.ref().on('value', (snapshot) => {
         const root = snapshot.val() || {}; const data = root.vehicles || {}; const now = Date.now();
-        let unitInAction = null, actionPos = null, collisionDetected = false;
+        let unitInAction = null, actionPos = null, collisionOrange = false, collisionRed = false;
         
         for (let id in markers) { map.removeLayer(markers[id]); } markers = {}; 
         const mySafeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
@@ -195,7 +181,8 @@
             let dist = 9999;
             if (!isMe && myPos) {
                 dist = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
-                if (dist < 500) collisionDetected = true;
+                if (dist < 250) collisionRed = true;
+                else if (dist < 500) collisionOrange = true;
             }
 
             if (v.active) { unitInAction = displayName; actionPos = [v.lat, v.lon]; } 
@@ -208,10 +195,17 @@
             } 
         }
 
+        const container = document.getElementById('map-container');
         const halos = document.querySelectorAll('.vigilance-halo');
-        if (collisionDetected) {
+        
+        container.classList.remove('halo-orange', 'halo-red');
+        
+        if (collisionRed) {
+            container.classList.add('halo-red');
             halos.forEach(h => h.style.display = 'block');
-            if (Date.now() % 2000 < 100) playBip(440);
+        } else if (collisionOrange) {
+            container.classList.add('halo-orange');
+            halos.forEach(h => h.style.display = 'block');
         } else {
             halos.forEach(h => h.style.display = 'none');
         }
