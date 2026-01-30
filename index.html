@@ -15,11 +15,20 @@
         
         #main-header {
             width: 80%; margin: 12px auto; text-align: center; padding: 12px; 
-            border: 1px solid rgba(231, 76, 60, 0.5); color: var(--accent-red);
+            border: 2px solid rgba(231, 76, 60, 0.5); color: var(--accent-red);
             font-weight: 800; background: rgba(30, 30, 30, 0.9); border-radius: 12px;
             text-transform: uppercase; letter-spacing: 3px; font-size: 1.1rem; min-height: 24px;
-            z-index: 1001;
+            z-index: 1001; transition: all 0.3s;
         }
+
+        .header-alert { 
+            background: var(--accent-red) !important; 
+            color: white !important; 
+            border-color: white !important; 
+            animation: pulse-header 0.6s infinite alternate;
+        }
+
+        @keyframes pulse-header { 0% { transform: scale(1); } 100% { transform: scale(1.02); } }
 
         #map-container { position: relative; flex-grow: 1; width: 100%; overflow: hidden; display: flex; }
         #map { height: 100%; width: 100%; background: #1a1a1a; z-index: 1; }
@@ -161,13 +170,16 @@
             if (v.active) { unitInAction = displayName; actionPos = [v.lat, v.lon]; } 
         }
 
-        // SYNCHRONISATION GLOBALE : Si plus d'interception, tout le monde repasse au bleu
-        if (!anyInterceptionActive) {
+        // SYNCHRONISATION : Si plus personne n'est en PEC, on réinitialise l'état local pour le bouton
+        if (!anyInterceptionActive && isVisible && !isPEC) {
             isVisible = false;
-            isPEC = false;
+        }
+        if (!anyInterceptionActive && isMe && isPEC) { // Sécurité pour l'auteur
+             isPEC = false;
+             isVisible = false;
         }
 
-        // Mise à jour de l'interface utilisateur
+        // Mise à jour visuelle des boutons
         btnSignal.classList.toggle('active', isVisible);
         btnSignal.innerText = isVisible ? "✅ REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
         btnPec.classList.toggle('active', isPEC);
@@ -188,8 +200,13 @@
         }
 
         const header = document.getElementById('main-header');
-        header.innerText = unitInAction ? "🚨 " + unitInAction.toUpperCase() : "TACTICAL DEPLOY";
-        header.className = unitInAction ? "header-alert" : "";
+        if (unitInAction) {
+            header.innerText = "🚨 " + unitInAction.toUpperCase();
+            header.classList.add("header-alert");
+        } else {
+            header.innerText = "TACTICAL DEPLOY";
+            header.classList.remove("header-alert");
+        }
     });
 
     navigator.geolocation.watchPosition((p) => { 
