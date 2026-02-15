@@ -14,11 +14,14 @@
         #map { flex-grow: 1; width: 100%; background: #222; }
         #notification-banner { position: absolute; top: 70px; left: 5%; width: 90%; padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; z-index: 1001; display: none; pointer-events: none; font-size: 1.1rem; border: 2px solid white; }
         .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
+        .alert-stopstick { display: block !important; background: #8e44ad !important; border: 2px solid white; }
+        
         #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
-        #btn-clear { background: #8e44ad; }
-        #btn-pec { background: #e67e22; grid-column: span 2; height: 60px; font-size: 1rem; }
+        #btn-clear { background: #444; }
+        #btn-stopstick { background: #8e44ad; }
+        #btn-pec { background: #e67e22; grid-column: span 2; height: 55px; font-size: 0.9rem; }
         #btn-pec.active { background: #c0392b; border: 2px solid white; }
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box; font-size: 1rem; text-align: center; }
     </style>
@@ -32,7 +35,8 @@
 <div id="ui-panel">
     <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
     <div class="btn-grid">
-        <button id="btn-clear">🧹 NETTOYER BASE</button>
+        <button id="btn-clear">🧹 NETTOYER</button>
+        <button id="btn-stopstick">🚧 STOP STICK</button>
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
     </div>
 </div>
@@ -50,6 +54,7 @@
 
     const idInput = document.getElementById('user-id');
     const btnPec = document.getElementById('btn-pec');
+    const btnStopStick = document.getElementById('btn-stopstick');
     const appBody = document.getElementById('app-body');
     const silentAudio = document.getElementById('silent-bkg');
 
@@ -61,7 +66,7 @@
 
     const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
     let myPos = null, isPEC = false, isLeader = false, hasCentered = false;
-    let lastAlertSource = null, wakeLock = null;
+    let lastAlertSource = null, lastSSSource = null, wakeLock = null;
     const markers = {};
 
     function getDistance(lat1, lon1, lat2, lon2) {
@@ -71,32 +76,21 @@
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    // --- FONCTION ANTI-VEILLE RENFORCÉE ---
     async function requestWakeLock() {
-        try {
-            if ('wakeLock' in navigator) {
-                wakeLock = await navigator.wakeLock.request('screen');
-                console.log("Wake Lock Actif");
-            }
-        } catch (err) { console.log("Echec Wake Lock"); }
+        try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
     }
 
     function handleTacticalMode(on) {
-        if (on) {
-            requestWakeLock();
-            silentAudio.play().catch(() => {});
-        } else {
-            if (wakeLock) { wakeLock.release(); wakeLock = null; }
-            silentAudio.pause();
-        }
+        if (on) { requestWakeLock(); silentAudio.play().catch(() => {}); }
+        else { if (wakeLock) { wakeLock.release(); wakeLock = null; } silentAudio.pause(); }
     }
 
-    function speakTriple(text) {
+    function speak(text, times = 1) {
         if ('speechSynthesis' in window) {
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'fr-FR'; utterance.rate = 1.1;
-            for (let i = 0; i < 3; i++) { window.speechSynthesis.speak(utterance); }
+            for (let i = 0; i < times; i++) { window.speechSynthesis.speak(utterance); }
         }
     }
 
@@ -107,10 +101,23 @@
         else { db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now() }); }
     }
 
+    // --- LOGIQUE STOP STICK ---
+    btnStopStick.onclick = function() {
+        const name = idInput.value.trim().toUpperCase();
+        db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true });
+        
+        setTimeout(() => {
+            if(confirm("RÉSULTAT STOP STICK ?\nOK = POSITIF\nANNULER = NÉGATIF")) {
+                db.ref('alerts/stopstick').set({ user: name, result: 'POSITIF', active: false });
+            } else {
+                db.ref('alerts/stopstick').set({ user: name, result: 'NÉGATIF', active: false });
+            }
+        }, 1000);
+    };
+
     btnPec.onclick = function() {
         isPEC = !isPEC;
         const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
-
         if (!isPEC) {
             if (isLeader) {
                 db.ref('vehicles').once('value', s => {
@@ -118,16 +125,11 @@
                     for(let id in data) if(data[id].active) db.ref('vehicles/' + id).update({ active: false });
                 });
             }
-            sync(true);
-            isLeader = false;
-            window.speechSynthesis.cancel();
-            handleTacticalMode(false);
+            sync(true); isLeader = false; window.speechSynthesis.cancel(); handleTacticalMode(false);
         } else {
             if (!lastAlertSource) isLeader = true; 
-            handleTacticalMode(true); // ACTIVATION ICI
-            sync();
+            handleTacticalMode(true); sync();
         }
-        
         this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : (lastAlertSource ? "📡 REJOINDRE DISPOSITIF" : "🚨 DÉMARRER PRISE EN CHARGE");
     };
@@ -140,12 +142,31 @@
         if (isPEC) sync();
     }, null, { enableHighAccuracy: true });
 
+    // ECOUTE STOP STICK
+    db.ref('alerts/stopstick').on('value', (s) => {
+        const data = s.val();
+        if (!data) return;
+        const banner = document.getElementById('notification-banner');
+        
+        if (data.active) {
+            banner.innerText = "🚧 ATTENTION : STOP STICK PAR " + data.user;
+            banner.classList.add('alert-active', 'alert-stopstick');
+            if (lastSSSource !== data.ts) {
+                speak("Attention, stop stick par " + data.user, 3);
+                lastSSSource = data.ts;
+            }
+        } else if (data.result) {
+            banner.classList.remove('alert-stopstick');
+            speak("Résultat stop stick : " + data.result, 1);
+            banner.innerText = "🚧 BILAN STOP STICK : " + data.result;
+            setTimeout(() => { if(!lastAlertSource) banner.classList.remove('alert-active'); }, 5000);
+        }
+    });
+
     db.ref('vehicles').on('value', (snapshot) => {
         const data = snapshot.val() || {};
-        let currentAlert = null;
-        let minDistance = Infinity;
+        let currentAlert = null; let minDistance = Infinity;
         const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
-
         for (let id in data) {
             const v = data[id];
             if (id !== mySafeId && (!v.ts || (Date.now() - v.ts > 120000))) continue;
@@ -158,35 +179,27 @@
             }
             if (v.active) currentAlert = id.replace(/_/g, ' ');
         }
-
         for (let id in markers) if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
-
         appBody.classList.remove('proximity-orange', 'proximity-red');
         if (minDistance <= 200) appBody.classList.add('proximity-red');
         else if (minDistance <= 500) appBody.classList.add('proximity-orange');
-
+        
         const banner = document.getElementById('notification-banner');
         if (currentAlert) {
             banner.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase();
             banner.classList.add('alert-active');
-            if (lastAlertSource !== currentAlert) {
-                speakTriple("Attention, prise en charge par " + currentAlert);
-                lastAlertSource = currentAlert;
-            }
+            if (lastAlertSource !== currentAlert) { speak(currentAlert + " prend en charge", 3); lastAlertSource = currentAlert; }
             if (!isPEC) btnPec.innerText = "📡 REJOINDRE DISPOSITIF";
         } else {
-            banner.classList.remove('alert-active');
-            lastAlertSource = null;
+            if (!banner.classList.contains('alert-stopstick')) {
+                banner.classList.remove('alert-active');
+                lastAlertSource = null;
+            }
             if (!isPEC) btnPec.innerText = "🚨 DÉMARRER PRISE EN CHARGE";
         }
     });
 
     document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer base ?")) db.ref('vehicles').remove(); };
-    
-    // Réactivation automatique si l'utilisateur revient sur l'onglet
-    document.addEventListener('visibilitychange', () => {
-        if (isPEC && document.visibilityState === 'visible') requestWakeLock();
-    });
 </script>
 </body>
 </html>
