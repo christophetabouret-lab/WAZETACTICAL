@@ -101,21 +101,10 @@
         else { db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now() }); }
     }
 
-    document.getElementById('btn-stopstick').onclick = function() {
-        const name = idInput.value.trim().toUpperCase();
-        db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null });
-    };
-
-    window.submitSS = function(res) {
-        db.ref('alerts/stopstick').update({ result: res, active: false });
-        ssChoices.style.display = "none";
-    }
-
     btnPec.onclick = function() {
         isPEC = !isPEC;
         if (!isPEC) {
             if (isLeader) {
-                // MODIFICATION : LE LEADER EFFACE TOUTES LES DONNÉES DE LA BASE
                 db.ref('vehicles').remove();
                 db.ref('alerts').remove();
             } else {
@@ -176,6 +165,13 @@
         let currentAlert = null; let minDistance = Infinity;
         const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
         
+        // --- CORRECTION : SORTIE AUTO SI LE LEADER STOPPE ---
+        if (isPEC && !isLeader && Object.keys(data).length === 0) {
+            isPEC = false;
+            updateUI();
+        }
+        // ----------------------------------------------------
+
         for (let id in data) {
             const v = data[id];
             if (v.active) currentAlert = id.replace(/_/g, ' ');
@@ -203,6 +199,16 @@
         }
         if (!isPEC) updateUI();
     });
+
+    document.getElementById('btn-stopstick').onclick = function() {
+        const name = idInput.value.trim().toUpperCase();
+        db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null });
+    };
+
+    window.submitSS = function(res) {
+        db.ref('alerts/stopstick').update({ result: res, active: false });
+        ssChoices.style.display = "none";
+    }
 
     document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer base ?")) db.ref('vehicles').remove(); };
 </script>
