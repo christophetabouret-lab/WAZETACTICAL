@@ -6,7 +6,6 @@
     <title>TACTICAL DEPLOY</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* Utilisation de dvh pour garantir que tout loge sur l'écran du téléphone */
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; }
         
         #main-title {
@@ -18,7 +17,6 @@
 
         #map { flex-grow: 1; width: 100%; background: #222; }
 
-        /* PANNEAU DE CONTRÔLE AVEC LA BARRE ORANGE */
         #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
 
         #notification-banner { 
@@ -36,11 +34,11 @@
         #btn-signal { background: #3498db; }
         #btn-signal.active { background: #2ecc71; }
         
-        /* TON BOUTON PEC ORANGE */
-        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 50px; font-size: 0.9rem; border: 1px solid rgba(255,255,255,0.2); }
+        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 50px; font-size: 0.9rem; }
         #btn-pec.active { background: #c0392b; }
         
-        #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; grid-column: span 2; margin-top: 5px; }
+        #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
+        #btn-clear { background: #8e44ad; height: 35px; border: 1px solid #9b59b6; }
 
         input { width: 100%; padding: 10px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; }
 
@@ -61,6 +59,7 @@
         <button id="btn-signal">📡 S'AFFICHER : NON</button>
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
         <button id="btn-sat">🗺️ VUE SATELLITE</button>
+        <button id="btn-clear">🧹 NETTOYER BASE</button>
     </div>
 </div>
 
@@ -76,10 +75,9 @@
     const idInput = document.getElementById('user-id');
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
-    idInput.onchange = () => { myName = idInput.value; localStorage.setItem('unit_name', myName); };
 
     const mapDiv = document.getElementById('map');
-    const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
+    const map = L.map('map', { zoomControl: false }).setView([46, 2], 5);
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false;
@@ -95,11 +93,24 @@
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
         if (isVisible) {
-            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC });
+            db.ref('vehicles/' + safeId).set({ 
+                lat: myPos.lat, 
+                lon: myPos.lon, 
+                active: isPEC,
+                ts: Date.now() // On ajoute un timestamp pour la fraîcheur
+            });
         } else {
             db.ref('vehicles/' + safeId).remove();
         }
     }
+
+    // BOUTON POUR NETTOYER LES FANTÔMES COMME L'UNITE 476
+    document.getElementById('btn-clear').onclick = function() {
+        if(confirm("Voulez-vous supprimer toutes les unités inactives de la base ?")) {
+            db.ref('vehicles').remove();
+            location.reload();
+        }
+    };
 
     document.getElementById('btn-signal').onclick = function() {
         isVisible = !isVisible;
@@ -136,11 +147,15 @@
         let collision = false;
         let alertSource = null;
         const safeMyId = myName.replace(/[^a-zA-Z0-9]/g, "_");
+        const now = Date.now();
 
         for (let id in data) {
             if (id === safeMyId) continue;
             const v = data[id];
-            if (v.lat === 0) continue; 
+            
+            // FILTRE : Si l'unité n'a pas donné signe de vie depuis 60 sec, on l'ignore
+            if (!v.ts || (now - v.ts > 60000)) continue;
+            if (v.lat === 0 || !v.lat) continue; 
 
             if (!markers[id]) markers[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
             else markers[id].setLatLng([v.lat, v.lon]);
@@ -152,7 +167,13 @@
             }
         }
 
-        for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
+        // Supprimer les markers des unités qui ont disparu ou sont devenues trop vieilles
+        for (let id in markers) { 
+            if (!data[id] || (now - data[id].ts > 60000)) { 
+                map.removeLayer(markers[id]); 
+                delete markers[id]; 
+            } 
+        }
 
         const banner = document.getElementById('notification-banner');
         if (alertSource) {
