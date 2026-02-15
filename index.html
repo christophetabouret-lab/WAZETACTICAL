@@ -7,13 +7,24 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; transition: 0.3s; border: 0px solid transparent; box-sizing: border-box; }
+        
+        /* ALERTES DE PROXIMITÉ */
         .proximity-orange { border: 8px solid #e67e22 !important; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
+
         #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0; }
         #map { flex-grow: 1; width: 100%; background: #222; }
+
         #notification-banner { position: absolute; top: 70px; left: 5%; width: 90%; padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; z-index: 1001; display: none; pointer-events: auto; font-size: 1.1rem; border: 2px solid white; }
         .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
+        .alert-stopstick { display: block !important; background: #8e44ad !important; border: 2px solid white; }
+        .ss-success { background: #2ecc71 !important; }
+        .ss-fail { background: #e74c3c !important; }
+
+        .ss-choice-box { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+        .btn-ss-res { padding: 8px 20px; border: 2px solid white; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 0.8rem; }
+        
         #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
@@ -22,16 +33,20 @@
         #btn-pec { background: #e67e22; grid-column: span 2; height: 55px; font-size: 0.9rem; }
         .active-leader { background: #c0392b !important; border: 2px solid white; }
         .active-join { background: #34495e !important; }
+        
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box; font-size: 1rem; text-align: center; }
-        /* Canvas anti-veille invisible */
-        #nosleep-canvas { position: absolute; bottom: 0; right: 0; width: 1px; height: 1px; opacity: 0.01; }
     </style>
 </head>
 <body id="app-body">
 
-<canvas id="nosleep-canvas"></canvas>
 <div id="main-title">TACTICAL DEPLOY</div>
-<div id="notification-banner"><div id="banner-text"></div></div>
+<div id="notification-banner">
+    <div id="banner-text"></div>
+    <div id="ss-choices" class="ss-choice-box" style="display:none;">
+        <div class="btn-ss-res" style="background:#2ecc71" onclick="submitSS('POSITIF')">POSITIF</div>
+        <div class="btn-ss-res" style="background:#e74c3c" onclick="submitSS('NÉGATIF')">NÉGATIF</div>
+    </div>
+</div>
 <div id="map"></div>
 
 <div id="ui-panel">
@@ -42,8 +57,6 @@
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
     </div>
 </div>
-
-<audio id="silent-audio" loop><source src="data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" type="audio/wav"></audio>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
@@ -58,17 +71,26 @@
     const btnPec = document.getElementById('btn-pec');
     const banner = document.getElementById('notification-banner');
     const bannerText = document.getElementById('banner-text');
-    const silentAudio = document.getElementById('silent-audio');
-    const nsCanvas = document.getElementById('nosleep-canvas');
-    const nsCtx = nsCanvas.getContext('2d');
+    const ssChoices = document.getElementById('ss-choices');
+    const appBody = document.getElementById('app-body');
+
+    idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
+    idInput.oninput = () => localStorage.setItem('unit_name', idInput.value);
 
     const map = L.map('map', { zoomControl: false }).setView([46, 2], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
 
-    let myPos = null, isPEC = false, isLeader = false, lastAlertSource = null, hasCentered = false;
-    let wakeLock = null, nsInterval = null;
+    let myPos = null, isPEC = false, isLeader = false, hasCentered = false;
+    let lastAlertSource = null, lastSSSource = null;
     const markers = {};
+
+    function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3;
+        const φ1 = lat1 * Math.PI/180; const φ2 = lat2 * Math.PI/180;
+        const a = Math.sin(((lat2-lat1)*Math.PI/180)/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(((lon2-lon1)*Math.PI/180)/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
 
     function speak(text, times = 1) {
         if ('speechSynthesis' in window) {
@@ -79,23 +101,6 @@
         }
     }
 
-    // ANTI-VEILLE RADICALE
-    async function toggleNoSleep(on) {
-        if (on) {
-            try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
-            silentAudio.play().catch(()=>{});
-            // Force le CPU/GPU par un dessin constant
-            nsInterval = setInterval(() => {
-                nsCtx.fillStyle = `rgb(${Math.random()*255},0,0)`;
-                nsCtx.fillRect(0,0,1,1);
-            }, 100);
-        } else {
-            if (wakeLock) { wakeLock.release(); wakeLock = null; }
-            silentAudio.pause();
-            clearInterval(nsInterval);
-        }
-    }
-
     function sync(remove = false) {
         if (!myPos) return;
         const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
@@ -103,20 +108,29 @@
         else { db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now() }); }
     }
 
+    document.getElementById('btn-stopstick').onclick = function() {
+        const name = idInput.value.trim().toUpperCase();
+        db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null });
+    };
+
+    window.submitSS = function(res) {
+        db.ref('alerts/stopstick').update({ result: res, active: false });
+        ssChoices.style.display = "none";
+    }
+
     btnPec.onclick = function() {
         isPEC = !isPEC;
-        const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
         if (!isPEC) {
             if (isLeader) {
                 db.ref('vehicles').once('value', s => {
                     const data = s.val();
                     for(let id in data) db.ref('vehicles/' + id).update({ active: false });
                 });
+                db.ref('alerts/stopstick').remove();
             }
-            sync(true); isLeader = false; toggleNoSleep(false);
+            sync(true); isLeader = false;
         } else {
             if (!lastAlertSource) isLeader = true;
-            toggleNoSleep(true);
             sync();
         }
         updateUI();
@@ -136,42 +150,66 @@
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
         
-        // RETABLISSEMENT DU ZOOM ET SUIVI
+        // SUIVI GPS PERMANENT ET ZOOM RÉTABLIS
         map.panTo([myPos.lat, myPos.lon]);
         if (!hasCentered) { map.setZoom(16); hasCentered = true; }
         
         if (isPEC) sync();
     }, null, { enableHighAccuracy: true });
 
+    db.ref('alerts/stopstick').on('value', (s) => {
+        const data = s.val(); if (!data) return;
+        const myName = idInput.value.trim().toUpperCase();
+        banner.classList.remove('ss-success', 'ss-fail');
+        if (data.active) {
+            bannerText.innerText = "🚧 ATTENTION : STOP STICK PAR " + data.user;
+            banner.classList.add('alert-active', 'alert-stopstick');
+            if (data.user === myName) ssChoices.style.display = "flex";
+            if (lastSSSource !== data.ts) { speak("Attention, stop stick par " + data.user, 3); lastSSSource = data.ts; }
+        } else if (data.result) {
+            banner.classList.remove('alert-stopstick');
+            banner.classList.add(data.result === 'POSITIF' ? 'ss-success' : 'ss-fail');
+            bannerText.innerText = "🚧 STOP STICK : " + (data.result === 'POSITIF' ? 'RÉUSSITE' : 'ÉCHEC');
+            ssChoices.style.display = "none";
+            if (lastSSSource !== data.ts + "_res") { speak("Stop stick " + data.result, 3); lastSSSource = data.ts + "_res"; }
+            setTimeout(() => { banner.classList.remove('ss-success', 'ss-fail'); if(!lastAlertSource && !isPEC) banner.classList.remove('alert-active'); }, 5000);
+        }
+    });
+
     db.ref('vehicles').on('value', (snapshot) => {
         const data = snapshot.val() || {};
-        let currentAlert = null;
+        let currentAlert = null; let minDistance = Infinity;
+        const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
+        
         for (let id in data) {
             const v = data[id];
             if (v.active) currentAlert = id.replace(/_/g, ' ');
-            if (id !== idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_")) {
+            if (id !== mySafeId) {
                 if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map);
                 markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
+                if (myPos) {
+                    const d = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
+                    if (d < minDistance) minDistance = d;
+                }
             }
         }
-        if (currentAlert) {
+        for (let id in markers) if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
+        
+        appBody.classList.remove('proximity-orange', 'proximity-red');
+        if (minDistance <= 200) appBody.classList.add('proximity-red');
+        else if (minDistance <= 500) appBody.classList.add('proximity-orange');
+
+        if (currentAlert && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('ss-fail')) {
             bannerText.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase();
             banner.classList.add('alert-active');
             if (lastAlertSource !== currentAlert) { speak(currentAlert + " prend en charge", 3); lastAlertSource = currentAlert; }
-        } else {
-            banner.classList.remove('alert-active');
-            if (lastAlertSource) { speak("Fin de l'alerte", 1); lastAlertSource = null; }
+        } else if (!currentAlert && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('ss-fail')) {
+            banner.classList.remove('alert-active'); lastAlertSource = null;
         }
         if (!isPEC) updateUI();
     });
 
-    document.getElementById('btn-stopstick').onclick = () => {
-        const name = idInput.value.trim().toUpperCase();
-        db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true });
-        setTimeout(() => db.ref('alerts/stopstick').remove(), 5000);
-    };
-
-    document.getElementById('btn-clear').onclick = () => { if(confirm("Reset ?")) db.ref('vehicles').remove(); };
+    document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer base ?")) db.ref('vehicles').remove(); };
 </script>
 </body>
 </html>
