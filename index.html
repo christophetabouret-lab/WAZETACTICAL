@@ -16,7 +16,7 @@
         .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
         #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; transition: 0.2s; }
+        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
         #btn-clear { background: #8e44ad; }
         #btn-pec { background: #e67e22; grid-column: span 2; height: 60px; font-size: 1rem; }
         #btn-pec.active { background: #c0392b; border: 2px solid white; }
@@ -71,12 +71,24 @@
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    async function toggleTactical(on) {
-        try { 
-            if (on && 'wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
-            else if (wakeLock) { wakeLock.release(); wakeLock = null; }
-        } catch (err) {}
-        if (on) silentAudio.play().catch(() => {}); else silentAudio.pause();
+    // --- FONCTION ANTI-VEILLE RENFORCÉE ---
+    async function requestWakeLock() {
+        try {
+            if ('wakeLock' in navigator) {
+                wakeLock = await navigator.wakeLock.request('screen');
+                console.log("Wake Lock Actif");
+            }
+        } catch (err) { console.log("Echec Wake Lock"); }
+    }
+
+    function handleTacticalMode(on) {
+        if (on) {
+            requestWakeLock();
+            silentAudio.play().catch(() => {});
+        } else {
+            if (wakeLock) { wakeLock.release(); wakeLock = null; }
+            silentAudio.pause();
+        }
     }
 
     function speakTriple(text) {
@@ -91,11 +103,8 @@
     function sync(remove = false) {
         if (!myPos) return;
         const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
-        if (remove) {
-            db.ref('vehicles/' + safeId).remove();
-        } else {
-            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now() });
-        }
+        if (remove) { db.ref('vehicles/' + safeId).remove(); }
+        else { db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now() }); }
     }
 
     btnPec.onclick = function() {
@@ -104,20 +113,18 @@
 
         if (!isPEC) {
             if (isLeader) {
-                // Si j'étais le leader, mon STOP nettoie tout
                 db.ref('vehicles').once('value', s => {
                     const data = s.val();
                     for(let id in data) if(data[id].active) db.ref('vehicles/' + id).update({ active: false });
                 });
             }
-            sync(true); // Je me retire
+            sync(true);
             isLeader = false;
             window.speechSynthesis.cancel();
-            toggleTactical(false);
+            handleTacticalMode(false);
         } else {
-            // Si aucune alerte n'est en cours, je deviens Leader
             if (!lastAlertSource) isLeader = true; 
-            toggleTactical(true);
+            handleTacticalMode(true); // ACTIVATION ICI
             sync();
         }
         
@@ -142,7 +149,6 @@
         for (let id in data) {
             const v = data[id];
             if (id !== mySafeId && (!v.ts || (Date.now() - v.ts > 120000))) continue;
-            
             if (id !== mySafeId && myPos) {
                 const dist = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
                 if (dist < minDistance) minDistance = dist;
@@ -155,7 +161,6 @@
 
         for (let id in markers) if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
 
-        // Mise à jour interface
         appBody.classList.remove('proximity-orange', 'proximity-red');
         if (minDistance <= 200) appBody.classList.add('proximity-red');
         else if (minDistance <= 500) appBody.classList.add('proximity-orange');
@@ -171,13 +176,17 @@
             if (!isPEC) btnPec.innerText = "📡 REJOINDRE DISPOSITIF";
         } else {
             banner.classList.remove('alert-active');
-            window.speechSynthesis.cancel();
             lastAlertSource = null;
             if (!isPEC) btnPec.innerText = "🚨 DÉMARRER PRISE EN CHARGE";
         }
     });
 
     document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer base ?")) db.ref('vehicles').remove(); };
+    
+    // Réactivation automatique si l'utilisateur revient sur l'onglet
+    document.addEventListener('visibilitychange', () => {
+        if (isPEC && document.visibilityState === 'visible') requestWakeLock();
+    });
 </script>
 </body>
 </html>
