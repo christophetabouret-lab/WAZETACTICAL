@@ -7,24 +7,19 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; transition: 0.3s; border: 0px solid transparent; box-sizing: border-box; }
-        
         .proximity-orange { border: 8px solid #e67e22 !important; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
-
         #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0; }
         #map { flex-grow: 1; width: 100%; background: #222; }
         #notification-banner { position: absolute; top: 70px; left: 5%; width: 90%; padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; z-index: 1001; display: none; pointer-events: none; font-size: 1.1rem; border: 2px solid white; }
         .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
-        
         #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
-        #btn-signal { background: #3498db; }
-        #btn-signal.active { background: #2ecc71; border: 2px solid white; }
+        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; transition: 0.2s; }
         #btn-clear { background: #8e44ad; }
-        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 55px; font-size: 0.9rem; }
-        #btn-pec.active { background: #c0392b; border: 2px solid white; box-shadow: 0 0 15px #ff0000; }
+        #btn-pec { background: #e67e22; grid-column: span 2; height: 60px; font-size: 1rem; }
+        #btn-pec.active { background: #c0392b; border: 2px solid white; }
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box; font-size: 1rem; text-align: center; }
     </style>
 </head>
@@ -37,7 +32,6 @@
 <div id="ui-panel">
     <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
     <div class="btn-grid">
-        <button id="btn-signal">📡 REJOINDRE LE DISPOSITIF</button>
         <button id="btn-clear">🧹 NETTOYER BASE</button>
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
     </div>
@@ -55,7 +49,6 @@
     const db = firebase.database();
 
     const idInput = document.getElementById('user-id');
-    const btnSignal = document.getElementById('btn-signal');
     const btnPec = document.getElementById('btn-pec');
     const appBody = document.getElementById('app-body');
     const silentAudio = document.getElementById('silent-bkg');
@@ -67,7 +60,7 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
-    let myPos = null, isVisible = false, isPEC = false, hasCentered = false;
+    let myPos = null, isPEC = false, isLeader = false, hasCentered = false;
     let lastAlertSource = null, wakeLock = null;
     const markers = {};
 
@@ -78,14 +71,12 @@
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    async function activateTacticalMode() {
-        try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
-        silentAudio.play().catch(() => {});
-    }
-
-    function deactivateTacticalMode() {
-        if (wakeLock !== null) { wakeLock.release(); wakeLock = null; }
-        silentAudio.pause();
+    async function toggleTactical(on) {
+        try { 
+            if (on && 'wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+            else if (wakeLock) { wakeLock.release(); wakeLock = null; }
+        } catch (err) {}
+        if (on) silentAudio.play().catch(() => {}); else silentAudio.pause();
     }
 
     function speakTriple(text) {
@@ -97,57 +88,54 @@
         }
     }
 
-    function sync() {
+    function sync(remove = false) {
         if (!myPos) return;
-        const name = idInput.value.trim() || "Anonyme";
-        const safeId = name.replace(/[^a-zA-Z0-9]/g, "_");
-        if (isVisible || isPEC) {
-            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
-        } else {
+        const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
+        if (remove) {
             db.ref('vehicles/' + safeId).remove();
+        } else {
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now() });
         }
     }
 
-    btnSignal.onclick = function() {
-        isVisible = !isVisible;
-        this.classList.toggle('active', isVisible);
-        this.innerText = isVisible ? "📡 QUITTER LE DISPOSITIF" : "📡 REJOINDRE LE DISPOSITIF";
-        if (isVisible || isPEC) activateTacticalMode(); else deactivateTacticalMode();
-        sync();
-    };
-
     btnPec.onclick = function() {
         isPEC = !isPEC;
-        const name = idInput.value.trim() || "Anonyme";
-        const safeId = name.replace(/[^a-zA-Z0-9]/g, "_");
+        const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
 
         if (!isPEC) {
-            // --- REMISE À ZÉRO GLOBALE ---
-            db.ref('vehicles/' + safeId).update({ active: false }); // On informe les autres
+            if (isLeader) {
+                // Si j'étais le leader, mon STOP nettoie tout
+                db.ref('vehicles').once('value', s => {
+                    const data = s.val();
+                    for(let id in data) if(data[id].active) db.ref('vehicles/' + id).update({ active: false });
+                });
+            }
+            sync(true); // Je me retire
+            isLeader = false;
             window.speechSynthesis.cancel();
-            if (!isVisible) deactivateTacticalMode();
+            toggleTactical(false);
         } else {
-            isVisible = true;
-            btnSignal.classList.add('active');
-            btnSignal.innerText = "📡 QUITTER LE DISPOSITIF";
-            activateTacticalMode();
+            // Si aucune alerte n'est en cours, je deviens Leader
+            if (!lastAlertSource) isLeader = true; 
+            toggleTactical(true);
+            sync();
         }
+        
         this.classList.toggle('active', isPEC);
-        this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        sync();
+        this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : (lastAlertSource ? "📡 REJOINDRE DISPOSITIF" : "🚨 DÉMARRER PRISE EN CHARGE");
     };
 
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
-        myMarker.setStyle({ color: isPEC ? '#ff0000' : '#3498db' });
+        myMarker.setStyle({ color: isLeader ? '#ff0000' : '#3498db' });
         if (!hasCentered) { map.setView([myPos.lat, myPos.lon], 16); hasCentered = true; }
-        if (isVisible || isPEC) sync();
+        if (isPEC) sync();
     }, null, { enableHighAccuracy: true });
 
     db.ref('vehicles').on('value', (snapshot) => {
         const data = snapshot.val() || {};
-        let alertSource = null;
+        let currentAlert = null;
         let minDistance = Infinity;
         const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
 
@@ -158,38 +146,38 @@
             if (id !== mySafeId && myPos) {
                 const dist = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
                 if (dist < minDistance) minDistance = dist;
-                if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id.replace(/_/g, ' '));
+                if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map);
                 markers[id].setLatLng([v.lat, v.lon]);
                 markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
             }
-            if (v.active) alertSource = id.replace(/_/g, ' ');
+            if (v.active) currentAlert = id.replace(/_/g, ' ');
         }
 
-        for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
+        for (let id in markers) if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
 
-        // Alertes de proximité
+        // Mise à jour interface
         appBody.classList.remove('proximity-orange', 'proximity-red');
         if (minDistance <= 200) appBody.classList.add('proximity-red');
         else if (minDistance <= 500) appBody.classList.add('proximity-orange');
 
         const banner = document.getElementById('notification-banner');
-        if (alertSource) {
-            banner.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + alertSource.toUpperCase();
+        if (currentAlert) {
+            banner.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase();
             banner.classList.add('alert-active');
-            if (lastAlertSource !== alertSource) {
-                speakTriple("Attention, prise en charge par " + alertSource);
-                lastAlertSource = alertSource;
+            if (lastAlertSource !== currentAlert) {
+                speakTriple("Attention, prise en charge par " + currentAlert);
+                lastAlertSource = currentAlert;
             }
+            if (!isPEC) btnPec.innerText = "📡 REJOINDRE DISPOSITIF";
         } else {
-            // RÉINITIALISATION LOCALE QUAND L'ALERTE S'ARRÊTE DANS LA BASE
             banner.classList.remove('alert-active');
-            banner.innerText = "";
             window.speechSynthesis.cancel();
             lastAlertSource = null;
+            if (!isPEC) btnPec.innerText = "🚨 DÉMARRER PRISE EN CHARGE";
         }
     });
 
-    document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer la base ?")) db.ref('vehicles').remove(); };
+    document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer base ?")) db.ref('vehicles').remove(); };
 </script>
 </body>
 </html>
