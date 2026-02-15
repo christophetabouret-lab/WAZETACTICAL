@@ -7,40 +7,19 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; }
-        
-        #main-title {
-            width: 80%; margin: 10px auto; text-align: center;
-            padding: 10px; border: 2px solid #e74c3c; color: #e74c3c;
-            font-weight: bold; background: #2c2c2c; border-radius: 8px;
-            text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0;
-        }
-
+        #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0; }
         #map { flex-grow: 1; width: 100%; background: #222; }
-
-        #notification-banner { 
-            position: absolute; top: 70px; left: 10%; width: 80%;
-            padding: 12px; border-radius: 4px; font-weight: bold; text-align: center;
-            z-index: 1001; display: none; pointer-events: none;
-        }
-
+        #notification-banner { position: absolute; top: 70px; left: 5%; width: 90%; padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; z-index: 1001; display: none; pointer-events: none; font-size: 1.1rem; border: 2px solid white; }
         .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
-
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.6; } }
-
         #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
-
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
-        
         #btn-signal { background: #3498db; }
         #btn-signal.active { background: #2ecc71; border: 2px solid white; }
-        
         #btn-clear { background: #8e44ad; }
-
         #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 55px; font-size: 0.9rem; }
         #btn-pec.active { background: #c0392b; border: 2px solid white; box-shadow: 0 0 15px #ff0000; }
-
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box; font-size: 1rem; text-align: center; }
     </style>
 </head>
@@ -81,23 +60,33 @@
 
     const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
     let myPos = null, isVisible = false, isPEC = false, hasCentered = false;
+    let lastAlertSource = null;
     const markers = {};
+
+    // Fonction de synthèse vocale avec répétition x3
+    function speakTriple(text) {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel(); // Arrête tout message en cours
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'fr-FR';
+            utterance.rate = 1.1; // Légèrement accéléré pour l'efficacité
+
+            // On lance 3 fois
+            for (let i = 0; i < 3; i++) {
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+    }
 
     function sync(forceStop = false) {
         if (!myPos) return;
         const name = idInput.value.trim() || "Anonyme";
         const safeId = name.replace(/[^a-zA-Z0-9]/g, "_");
-        
         const activeState = forceStop ? false : isPEC;
         myMarker.setStyle({ color: activeState ? '#ff0000' : '#3498db' });
 
         if (isVisible || activeState) {
-            db.ref('vehicles/' + safeId).set({
-                lat: myPos.lat,
-                lon: myPos.lon,
-                active: activeState,
-                ts: Date.now()
-            });
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: activeState, ts: Date.now() });
         } else {
             db.ref('vehicles/' + safeId).remove();
         }
@@ -115,6 +104,8 @@
         if (!isPEC) {
             banner.classList.remove('alert-active');
             banner.innerText = "";
+            lastAlertSource = null;
+            window.speechSynthesis.cancel(); // Coupe la voix si on arrête la PEC
         } else {
             isVisible = true;
             btnSignal.classList.add('active');
@@ -138,27 +129,31 @@
         const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
 
         for (let id in data) {
-            if (id === mySafeId) {
-                if (!isPEC && data[id].active) continue;
-                if (isPEC && data[id].active) alertSource = id.replace(/_/g, ' ');
-                continue;
-            }
             const v = data[id];
-            if (!v.ts || (Date.now() - v.ts > 120000)) continue;
+            if (id !== mySafeId && (!v.ts || (Date.now() - v.ts > 120000))) continue;
 
-            if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id.replace(/_/g, ' '));
-            markers[id].setLatLng([v.lat, v.lon]);
-            markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
+            if (id !== mySafeId) {
+                if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id.replace(/_/g, ' '));
+                markers[id].setLatLng([v.lat, v.lon]);
+                markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
+            }
+
             if (v.active) alertSource = id.replace(/_/g, ' ');
         }
 
         for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
 
         if (alertSource) {
-            banner.innerText = "🚨 ALERTE : " + alertSource.toUpperCase();
+            banner.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + alertSource.toUpperCase();
             banner.classList.add('alert-active');
+            
+            if (lastAlertSource !== alertSource) {
+                speakTriple("Attention, prise en charge par " + alertSource);
+                lastAlertSource = alertSource;
+            }
         } else {
             banner.classList.remove('alert-active');
+            lastAlertSource = null;
         }
     });
 
