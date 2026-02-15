@@ -20,12 +20,12 @@
         #notification-banner { 
             position: absolute; top: 70px; left: 10%; width: 80%;
             padding: 12px; border-radius: 4px; font-weight: bold; text-align: center;
-            z-index: 1001; display: none;
+            z-index: 1001; display: none; pointer-events: none;
         }
 
-        .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; }
+        .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
 
-        @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.7; } }
+        @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.6; } }
 
         #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
 
@@ -35,15 +35,13 @@
         #btn-signal { background: #3498db; }
         #btn-signal.active { background: #2ecc71; border: 2px solid white; }
         
-        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 50px; font-size: 0.9rem; }
+        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 50px; font-size: 0.9rem; transition: 0.2s; }
         #btn-pec.active { background: #c0392b; border: 2px solid white; box-shadow: 0 0 15px #ff0000; }
         
         #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
         #btn-clear { background: #8e44ad; height: 35px; border: 1px solid #9b59b6; }
 
         input { width: 100%; padding: 10px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; }
-
-        .proximity-alert { box-shadow: inset 0 0 40px #ff0000 !important; border: 6px solid #ff0000 !important; }
     </style>
 </head>
 <body>
@@ -74,6 +72,7 @@
     const idInput = document.getElementById('user-id');
     const btnSignal = document.getElementById('btn-signal');
     const btnPec = document.getElementById('btn-pec');
+    const banner = document.getElementById('notification-banner');
 
     idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.oninput = () => localStorage.setItem('unit_name', idInput.value);
@@ -83,20 +82,24 @@
     const satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
 
     const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
-    let myPos = null;
-    let isVisible = false;
-    let isPEC = false;
-    let hasCentered = false; // Bloqueur pour le zoom auto
+    let myPos = null, isVisible = false, isPEC = false, hasCentered = false;
     const markers = {};
 
-    function sync() {
+    function sync(forceStop = false) {
         if (!myPos) return;
         const name = idInput.value.trim() || "Anonyme";
         const safeId = name.replace(/[^a-zA-Z0-9]/g, "_");
-        myMarker.setStyle({ color: isPEC ? '#ff0000' : '#3498db' });
+        
+        const activeState = forceStop ? false : isPEC;
+        myMarker.setStyle({ color: activeState ? '#ff0000' : '#3498db' });
 
-        if (isVisible) {
-            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
+        if (isVisible || activeState) {
+            db.ref('vehicles/' + safeId).set({
+                lat: myPos.lat,
+                lon: myPos.lon,
+                active: activeState,
+                ts: Date.now()
+            });
         } else {
             db.ref('vehicles/' + safeId).remove();
         }
@@ -111,14 +114,22 @@
 
     btnPec.onclick = function() {
         isPEC = !isPEC;
-        if (isPEC) {
+        
+        // SECURITÉ 1 : Si on éteint, on nettoie le bandeau immédiatement en local
+        if (!isPEC) {
+            banner.classList.remove('alert-active');
+            banner.innerText = "";
+        } else {
             isVisible = true;
             btnSignal.classList.add('active');
             btnSignal.innerText = "📡 S'AFFICHER : OUI";
         }
+
         this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        sync();
+        
+        // SECURITÉ 2 : Envoi forcé de l'état false si c'est un arrêt
+        sync(!isPEC);
     };
 
     let isSat = false;
@@ -131,12 +142,7 @@
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
-        
-        // ZOOM AUTOMATIQUE UNE SEULE FOIS AU DEBUT
-        if (!hasCentered) {
-            map.setView([myPos.lat, myPos.lon], 16);
-            hasCentered = true;
-        }
+        if (!hasCentered) { map.setView([myPos.lat, myPos.lon], 16); hasCentered = true; }
         if (isVisible) sync();
     }, null, { enableHighAccuracy: true });
 
@@ -146,19 +152,24 @@
         const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
 
         for (let id in data) {
-            if (id === mySafeId) continue;
+            if (id === mySafeId) {
+                // SECURITÉ 3 : Si je reçois ma propre alerte alors que je l'ai coupée, je l'ignore
+                if (!isPEC && data[id].active) continue;
+                if (isPEC && data[id].active) alertSource = id.replace(/_/g, ' ');
+                continue;
+            }
             const v = data[id];
             if (!v.ts || (Date.now() - v.ts > 120000)) continue;
 
             if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id.replace(/_/g, ' '));
             markers[id].setLatLng([v.lat, v.lon]);
             markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
+            
             if (v.active) alertSource = id.replace(/_/g, ' ');
         }
 
         for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
 
-        const banner = document.getElementById('notification-banner');
         if (alertSource) {
             banner.innerText = "🚨 ALERTE : " + alertSource.toUpperCase();
             banner.classList.add('alert-active');
