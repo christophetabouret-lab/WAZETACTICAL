@@ -75,8 +75,8 @@
     const btnSignal = document.getElementById('btn-signal');
     const btnPec = document.getElementById('btn-pec');
 
-    let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
-    idInput.value = myName;
+    idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
+    idInput.oninput = () => localStorage.setItem('unit_name', idInput.value);
 
     const map = L.map('map', { zoomControl: false }).setView([46, 2], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -86,29 +86,22 @@
     let myPos = null;
     let isVisible = false;
     let isPEC = false;
+    let hasCentered = false; // Bloqueur pour le zoom auto
     const markers = {};
 
-    // FONCTION UNIQUE D'ENVOI
     function sync() {
         if (!myPos) return;
         const name = idInput.value.trim() || "Anonyme";
         const safeId = name.replace(/[^a-zA-Z0-9]/g, "_");
-        
         myMarker.setStyle({ color: isPEC ? '#ff0000' : '#3498db' });
 
         if (isVisible) {
-            db.ref('vehicles/' + safeId).set({
-                lat: myPos.lat,
-                lon: myPos.lon,
-                active: isPEC,
-                ts: Date.now()
-            });
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
         } else {
             db.ref('vehicles/' + safeId).remove();
         }
     }
 
-    // BOUTON S'AFFICHER
     btnSignal.onclick = function() {
         isVisible = !isVisible;
         this.classList.toggle('active', isVisible);
@@ -116,11 +109,10 @@
         sync();
     };
 
-    // BOUTON PEC
     btnPec.onclick = function() {
         isPEC = !isPEC;
         if (isPEC) {
-            isVisible = true; // Force l'affichage si on lance une PEC
+            isVisible = true;
             btnSignal.classList.add('active');
             btnSignal.innerText = "📡 S'AFFICHER : OUI";
         }
@@ -129,7 +121,6 @@
         sync();
     };
 
-    // VUE SATELLITE
     let isSat = false;
     document.getElementById('btn-sat').onclick = function() {
         if (!isSat) map.addLayer(satLayer); else map.removeLayer(satLayer);
@@ -137,14 +128,18 @@
         this.innerText = isSat ? "🗺️ VUE ROUTE" : "🗺️ VUE SATELLITE";
     };
 
-    // GPS
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
+        
+        // ZOOM AUTOMATIQUE UNE SEULE FOIS AU DEBUT
+        if (!hasCentered) {
+            map.setView([myPos.lat, myPos.lon], 16);
+            hasCentered = true;
+        }
         if (isVisible) sync();
     }, null, { enableHighAccuracy: true });
 
-    // RECEPTION
     db.ref('vehicles').on('value', (snapshot) => {
         const data = snapshot.val() || {};
         let alertSource = null;
@@ -155,15 +150,17 @@
             const v = data[id];
             if (!v.ts || (Date.now() - v.ts > 120000)) continue;
 
-            if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id);
+            if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id.replace(/_/g, ' '));
             markers[id].setLatLng([v.lat, v.lon]);
             markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
-            if (v.active) alertSource = id;
+            if (v.active) alertSource = id.replace(/_/g, ' ');
         }
+
+        for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
 
         const banner = document.getElementById('notification-banner');
         if (alertSource) {
-            banner.innerText = "🚨 ALERTE : " + alertSource.replace(/_/g, " ").toUpperCase();
+            banner.innerText = "🚨 ALERTE : " + alertSource.toUpperCase();
             banner.classList.add('alert-active');
         } else {
             banner.classList.remove('alert-active');
