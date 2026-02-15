@@ -8,79 +8,48 @@
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
         
-        /* TITRE */
         #main-title {
             width: 80%; margin: 10px auto; text-align: center;
             padding: 10px; border: 2px solid #e74c3c; color: #e74c3c;
             font-weight: bold; background: #2c2c2c; border-radius: 8px;
-            text-transform: uppercase; letter-spacing: 2px;
-            flex-shrink: 0;
+            text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0;
         }
 
-        /* CARTE EN HAUT */
-        #map { 
-            flex-grow: 1; 
-            width: 100%; 
-            background: #222;
-            border-top: 1px solid #444;
-            border-bottom: 1px solid #444;
-            transition: all 0.2s ease-in-out;
-        }
+        #map { flex-grow: 1; width: 100%; background: #222; }
 
-        /* PANNEAU DE CONTRÔLE EN BAS */
-        #ui-panel { 
-            padding: 10px 15px; 
-            background: #2c2c2c; 
-            z-index: 1000; 
-            flex-shrink: 0;
-        }
+        #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
 
         #notification-banner { 
             padding: 12px; border-radius: 4px; font-weight: bold; text-align: center;
             background: #27ae60; margin-bottom: 10px; font-size: 1rem;
-            transition: all 0.3s;
         }
 
-        .alert-active { 
-            background: #ff0000 !important; 
-            animation: pulse-red 0.5s infinite alternate;
-        }
+        .alert-active { background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; }
 
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.7; } }
 
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
         
-        #btn-vocal { background: #34495e; }
         #btn-signal { background: #3498db; }
         #btn-signal.active { background: #2ecc71; }
-        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 45px; font-size: 0.9rem; }
+        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 45px; }
         #btn-pec.active { background: #c0392b; }
         #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; grid-column: span 2; margin-top: 5px; }
 
-        input { 
-            width: 100%; padding: 10px; background: #444; border: 1px solid #666; 
-            color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; 
-        }
+        input { width: 100%; padding: 10px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; }
 
-        /* ALERTE PROXIMITÉ */
-        .proximity-alert {
-            box-shadow: inset 0 0 40px #ff0000 !important;
-            border: 6px solid #ff0000 !important;
-        }
+        .proximity-alert { box-shadow: inset 0 0 40px #ff0000 !important; border: 6px solid #ff0000 !important; }
     </style>
 </head>
 <body>
 
 <div id="main-title">TACTICAL DEPLOY</div>
-
 <div id="map"></div>
-
 <div id="ui-panel">
-    <div id="notification-banner">ZONE SÉCURISÉE</div>
+    <div id="notification-banner">RECHERCHE GPS...</div>
     <input type="text" id="user-id" placeholder="ID UNITÉ">
     <div class="btn-grid">
-        <button id="btn-vocal">🎙️ VOCAL</button>
         <button id="btn-signal">📡 SIGNAL : OFF</button>
         <button id="btn-pec">🚨 DÉMARRER PEC</button>
         <button id="btn-sat">🗺️ VUE SATELLITE</button>
@@ -99,30 +68,46 @@
     const idInput = document.getElementById('user-id');
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
-    idInput.onchange = () => { myName = idInput.value; localStorage.setItem('unit_name', myName); };
 
     const mapDiv = document.getElementById('map');
-    const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
+    const map = L.map('map', { zoomControl: false }).setView([46.5, 2.5], 5); // Vue France par défaut
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false;
 
-    const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
+    const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map);
     let myPos = null;
     let isVisible = false;
     let isPEC = false;
+    let firstZoom = true;
     const markers = {};
 
     function updateFirebase() {
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
         if (isVisible) {
-            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC });
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
         } else {
             db.ref('vehicles/' + safeId).remove();
         }
     }
 
+    // GÉOLOCALISATION AMÉLIORÉE
+    navigator.geolocation.watchPosition((p) => {
+        myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
+        myMarker.setLatLng([myPos.lat, myPos.lon]);
+        
+        if (firstZoom) {
+            map.setView([myPos.lat, myPos.lon], 16); // Zoom immédiat sur toi
+            firstZoom = false;
+            document.getElementById('notification-banner').innerText = "ZONE SÉCURISÉE";
+        }
+        if (isVisible) updateFirebase();
+    }, (err) => {
+        document.getElementById('notification-banner').innerText = "ERREUR GPS : ACTIVEZ LA POSITION";
+    }, { enableHighAccuracy: true });
+
+    // BOUTONS
     document.getElementById('btn-signal').onclick = function() {
         isVisible = !isVisible;
         this.classList.toggle('active');
@@ -143,12 +128,7 @@
         isSat = !isSat;
     };
 
-    navigator.geolocation.watchPosition((p) => {
-        myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
-        myMarker.setLatLng([myPos.lat, myPos.lon]);
-        if (isVisible) updateFirebase();
-    }, null, { enableHighAccuracy: true });
-
+    // LOGIQUE DE DÉTECTION SÉCURISÉE
     db.ref('vehicles').on('value', (snapshot) => {
         const data = snapshot.val() || {};
         let collision = false;
@@ -158,27 +138,29 @@
         for (let id in data) {
             if (id === safeMyId) continue;
             const v = data[id];
+            
+            // Ignorer les données invalides (0,0)
+            if (v.lat === 0 || v.lon === 0) continue;
+
             if (!markers[id]) markers[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
             else markers[id].setLatLng([v.lat, v.lon]);
+
             if (v.active) alertSource = id;
+
             if (myPos) {
                 const d = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
+                // Alerte si moins de 500m ET que l'unité a bougé récemment (ts < 2min)
                 if (d < 500) collision = true;
             }
         }
+
+        // Nettoyage visuel
+        for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
 
         const banner = document.getElementById('notification-banner');
         if (alertSource) {
             banner.innerText = "🚨 ALERTE : " + alertSource.replace(/_/g, " ");
             banner.className = "alert-active";
-        } else {
+        } else if (!firstZoom) {
             banner.innerText = "ZONE SÉCURISÉE";
             banner.className = "";
-        }
-
-        if (collision) mapDiv.classList.add('proximity-alert');
-        else mapDiv.classList.remove('proximity-alert');
-    });
-</script>
-</body>
-</html>
