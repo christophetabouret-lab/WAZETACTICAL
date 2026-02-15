@@ -6,217 +6,199 @@
     <title>TACTICAL DEPLOY</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root {
-            --bg-dark: #121212; --panel-bg: #1e1e1e; --accent-red: #e74c3c;
-            --accent-blue: #3498db; --accent-green: #2ecc71; --accent-purple: #9b59b6;
-            --accent-orange: #f39c12;
-        }
-        body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-dark); color: #e0e0e0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; }
         
-        #main-header {
-            width: 80%; margin: 12px auto; text-align: center; padding: 12px; 
-            border: 2px solid rgba(231, 76, 60, 0.5); color: var(--accent-red);
-            font-weight: 800; background: rgba(30, 30, 30, 0.9); border-radius: 12px;
-            text-transform: uppercase; letter-spacing: 3px; font-size: 1.1rem; min-height: 24px;
-            z-index: 1001; transition: all 0.3s;
+        #main-title {
+            width: 80%; margin: 10px auto; text-align: center;
+            padding: 12px; border: 2px solid #e74c3c; color: #e74c3c;
+            font-weight: bold; background: #2c2c2c; border-radius: 8px;
+            text-transform: uppercase; letter-spacing: 2px;
         }
 
-        .header-alert { 
-            background: var(--accent-red) !important; 
-            color: white !important; 
-            border-color: white !important; 
-            animation: pulse-header 0.6s infinite alternate;
+        #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; position: relative; border-bottom: 2px solid #444; }
+
+        #notification-banner { 
+            padding: 15px; border-radius: 4px; font-weight: bold; text-align: center;
+            background: #27ae60; margin-bottom: 10px; font-size: 1.1rem;
+            transition: all 0.3s;
         }
 
-        @keyframes pulse-header { 0% { transform: scale(1); } 100% { transform: scale(1.02); } }
-
-        #map-container { position: relative; flex-grow: 1; width: 100%; overflow: hidden; display: flex; }
-        #map { height: 100%; width: 100%; background: #1a1a1a; z-index: 1; }
-
-        .vigilance-halo {
-            position: absolute; top: 0; bottom: 0; width: 80px;
-            z-index: 1000; pointer-events: none; opacity: 0;
-            transition: opacity 0.3s ease;
+        .alert-active { 
+            background: #ff0000 !important; 
+            animation: pulse-red 0.5s infinite alternate;
         }
-        #halo-left { left: 0; }
-        #halo-right { right: 0; }
+
+        @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.7; } }
+
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; transition: 0.2s; }
         
-        .halo-orange #halo-left { opacity: 1; background: linear-gradient(to right, rgba(243, 156, 18, 0.7), transparent); animation: halo-pulse 0.8s infinite alternate; }
-        .halo-orange #halo-right { opacity: 1; background: linear-gradient(to left, rgba(243, 156, 18, 0.7), transparent); animation: halo-pulse 0.8s infinite alternate; }
-        .halo-red #halo-left { opacity: 1; background: linear-gradient(to right, rgba(231, 76, 60, 0.8), transparent); animation: halo-pulse 0.5s infinite alternate; }
-        .halo-red #halo-right { opacity: 1; background: linear-gradient(to left, rgba(231, 76, 60, 0.8), transparent); animation: halo-pulse 0.5s infinite alternate; }
+        #btn-vocal { background: #34495e; }
+        #btn-vocal.on { background: #2ecc71; box-shadow: 0 0 10px #2ecc71; }
+        #btn-signal { background: #3498db; }
+        #btn-signal.active { background: #2ecc71; }
+        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 8px; height: 45px; font-size: 0.9rem; }
+        #btn-pec.active { background: #c0392b; animation: pulse-red 0.8s infinite; }
+        #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
 
-        @keyframes halo-pulse { from { opacity: 0.3; } to { opacity: 1; } }
-
-        #ui-panel { padding: 10px 15px 15px; background: var(--panel-bg); z-index: 1001; border-top: 1px solid #333; }
-        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        button { padding: 14px 10px; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 6px; }
-
-        #btn-signal { background: var(--accent-blue); grid-column: span 2; height: 50px; }
-        #btn-signal.active { background: var(--accent-green); }
-        #btn-pec { background: #d35400; grid-column: span 2; height: 55px; border-bottom: 4px solid #a04000; }
-        #btn-pec.active { background: #c0392b; }
-
-        .police-icon { background: #2c3e50; border: 2px solid white; border-radius: 4px; width: 32px !important; height: 18px !important; position: relative; }
-        .police-icon::after { content: ''; position: absolute; top: -7px; left: 50%; transform: translateX(-50%); width: 14px; height: 14px; border-radius: 50%; animation: gyro-flash 0.4s infinite alternate; }
-        @keyframes gyro-flash { 0% { background: #ff0000; box-shadow: 0 0 15px #ff0000; } 100% { background: #0044ff; box-shadow: 0 0 15px #0044ff; } }
+        input { 
+            width: 100%; padding: 12px; background: #444; border: 1px solid #666; 
+            color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; 
+        }
         
-        .danger-marker { display: flex; justify-content: center; align-items: center; font-size: 32px; filter: drop-shadow(0 0 5px black); animation: bounce 0.4s infinite alternate; }
-        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-8px); } }
-        .tactical-tooltip { background: rgba(0,0,0,0.8); color: white; border: 1px solid var(--accent-blue); font-weight: bold; }
+        #map { height: calc(100vh - 360px); width: 100%; background: #222; }
+
+        .proximity-alert {
+            box-shadow: inset 0 0 50px 20px #ff0000 !important;
+            border: 8px solid #ff0000 !important;
+        }
     </style>
 </head>
 <body>
 
-<div id="main-header">TACTICAL DEPLOY</div>
-
-<div id="map-container">
-    <div id="halo-left" class="vigilance-halo"></div>
-    <div id="halo-right" class="vigilance-halo"></div>
-    <div id="map"></div>
-</div>
+<div id="main-title">TACTICAL DEPLOY</div>
 
 <div id="ui-panel">
-    <input type="text" id="user-id" placeholder="IDENTIFIANT UNITÉ">
+    <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ (ex: ALPHA-1)">
+    <div id="notification-banner">SYSTÈME PRÊT</div>
     <div class="btn-grid">
-        <button id="btn-vocal" style="background: #3d3d3d;">🎙️ LIVE VOCAL</button>
-        <button id="btn-dict" style="background: var(--accent-purple);">🗣️ DICTER MSG</button>
-        <button id="btn-signal">📡 REJOINDRE LE DISPOSITIF</button>
-        <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
-        <button id="btn-sat" style="background: #2c3e50;">🗺️ SATELLITE</button>
-        <button id="btn-reset" style="background: #5a5a5a;">🧹 RESET DATA</button>
+        <button id="btn-vocal">🎙️ VOCAL : OFF</button>
+        <button id="btn-signal">📡 SIGNAL : OFF</button>
+        <button id="btn-pec">🚨 DÉMARRER PEC</button>
+        <button id="btn-sat">🗺️ VUE SATELLITE</button>
     </div>
 </div>
+
+<div id="map"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
+    // 1. Initialisation Firebase
     const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    // 2. Variables d'état
     const idInput = document.getElementById('user-id');
-    const btnSignal = document.getElementById('btn-signal');
-    const btnPec = document.getElementById('btn-pec');
     let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.value = myName;
-    idInput.onchange = () => { myName = idInput.value; localStorage.setItem('unit_name', myName); };
-
-    const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([0, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     
-    const gyroIcon = L.divIcon({ className: 'police-icon', iconSize: [32, 18], iconAnchor: [16, 9] });
-    const dangerIcon = L.divIcon({ className: 'danger-marker', html: '⚠️', iconSize: [40, 40], iconAnchor: [20, 35] });
+    let myPos = null;
+    let isVisible = false;
+    let isPEC = false;
+    let firstFix = true;
+    const markers = {};
 
-    let myPos = null, isVisible = false, isPEC = false, firstFix = true, markers = {}; 
-    const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map);
+    // 3. Carte
+    const mapDiv = document.getElementById('map');
+    const map = L.map('map', { zoomControl: false }).setView([48.85, 2.35], 13);
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+    let isSat = false;
 
-    function getDistance(lat1, lon1, lat2, lon2) {
-        const R = 6371e3;
-        const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180, Δφ = (lat2-lat1) * Math.PI/180, Δλ = (lon2-lon1) * Math.PI/180;
-        const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
+    const myMarker = L.marker([0, 0], { zIndexOffset: 2000 }).addTo(map).bindPopup("MOI");
 
-    function sendUpdate() { 
+    // 4. Fonctions de mise à jour
+    function updateFirebase() {
         if (!myPos) return;
-        const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_"); 
-        if (isVisible || isPEC) { 
-            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now(), label: myName }); 
-        } else { db.ref('vehicles/' + safeId).remove(); } 
+        const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
+        if (isVisible) {
+            db.ref('vehicles/' + safeId).set({
+                lat: myPos.lat,
+                lon: myPos.lon,
+                active: isPEC,
+                ts: Date.now()
+            });
+        } else {
+            db.ref('vehicles/' + safeId).remove();
+        }
     }
 
-    btnPec.onclick = function() {
+    // 5. Événements Boutons
+    document.getElementById('btn-signal').onclick = function() {
+        isVisible = !isVisible;
+        this.classList.toggle('active');
+        this.innerText = isVisible ? "📡 SIGNAL : ON" : "📡 SIGNAL : OFF";
+        updateFirebase();
+    };
+
+    document.getElementById('btn-pec').onclick = function() {
         isPEC = !isPEC;
-        if (isPEC) isVisible = true;
-        sendUpdate();
+        this.classList.toggle('active');
+        this.innerText = isPEC ? "🛑 STOP PEC" : "🚨 DÉMARRER PEC";
+        updateFirebase();
     };
 
-    btnSignal.onclick = () => { 
-        isVisible = !isVisible; 
-        if (!isVisible) isPEC = false; 
-        sendUpdate(); 
+    document.getElementById('btn-sat').onclick = function() {
+        if (!isSat) { map.removeLayer(osm); map.addLayer(sat); this.innerText = "🗺️ VUE ROUTE"; }
+        else { map.removeLayer(sat); map.addLayer(osm); this.innerText = "🗺️ VUE SATELLITE"; }
+        isSat = !isSat;
     };
 
-    db.ref('vehicles').on('value', (snapshot) => {
-        const data = snapshot.val() || {};
-        const now = Date.now();
-        let unitInAction = null, actionPos = null, colOrange = false, colRed = false;
-        let anyInterceptionActive = false;
-
-        for (let id in markers) { map.removeLayer(markers[id]); } markers = {}; 
-        const mySafeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
-
-        for (let id in data) { 
-            const v = data[id]; const isMe = (id === mySafeId);
-            if (now - v.ts > 15000) continue; 
-            if (v.active) anyInterceptionActive = true;
-
-            const displayName = v.label || id.replace(/_/g, ' '); 
-            
-            if (!isMe && myPos) {
-                const dist = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
-                if (dist < 250) colRed = true;
-                else if (dist < 500) colOrange = true;
-
-                if (isVisible || v.active) {
-                    const icon = (dist < 500) ? dangerIcon : (v.active ? gyroIcon : new L.Icon.Default());
-                    markers[id] = L.marker([v.lat, v.lon], { icon }).addTo(map)
-                        .bindTooltip(displayName, { permanent: true, direction: 'top', className: 'tactical-tooltip', offset: [0, -10] });
-                }
-            }
-            if (v.active) { unitInAction = displayName; actionPos = [v.lat, v.lon]; } 
-        }
-
-        // SYNCHRONISATION : Si plus personne n'est en PEC, on réinitialise l'état local pour le bouton
-        if (!anyInterceptionActive && isVisible && !isPEC) {
-            isVisible = false;
-        }
-        if (!anyInterceptionActive && isMe && isPEC) { // Sécurité pour l'auteur
-             isPEC = false;
-             isVisible = false;
-        }
-
-        // Mise à jour visuelle des boutons
-        btnSignal.classList.toggle('active', isVisible);
-        btnSignal.innerText = isVisible ? "✅ REJOINT" : "📡 REJOINDRE LE DISPOSITIF";
-        btnPec.classList.toggle('active', isPEC);
-        btnPec.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-
-        const cont = document.getElementById('map-container');
-        cont.classList.remove('halo-orange', 'halo-red');
-        if (colRed) cont.classList.add('halo-red');
-        else if (colOrange) cont.classList.add('halo-orange');
-
-        myMarker.setIcon(isPEC ? gyroIcon : new L.Icon.Default());
+    // 6. Surveillance GPS
+    navigator.geolocation.watchPosition((p) => {
+        myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
+        myMarker.setLatLng([myPos.lat, myPos.lon]);
         
-        if (actionPos && isVisible) {
-            map.setView(actionPos, 17);
-        } else if (myPos && firstFix) {
-            map.setView([myPos.lat, myPos.lon], 17);
+        if (firstFix) {
+            map.setView([myPos.lat, myPos.lon], 16);
             firstFix = false;
         }
+        if (isVisible) updateFirebase();
+    }, (err) => {
+        console.error("Erreur GPS", err);
+    }, { enableHighAccuracy: true });
 
-        const header = document.getElementById('main-header');
-        if (unitInAction) {
-            header.innerText = "🚨 " + unitInAction.toUpperCase();
-            header.classList.add("header-alert");
-        } else {
-            header.innerText = "TACTICAL DEPLOY";
-            header.classList.remove("header-alert");
+    // 7. Ecoute temps réel
+    db.ref('vehicles').on('value', (snapshot) => {
+        const data = snapshot.val() || {};
+        let collision = false;
+        let alertSource = null;
+        const safeMyId = myName.replace(/[^a-zA-Z0-9]/g, "_");
+
+        for (let id in data) {
+            if (id === safeMyId) continue;
+            const v = data[id];
+            
+            // Gestion Markers
+            if (!markers[id]) {
+                markers[id] = L.marker([v.lat, v.lon]).addTo(map).bindPopup(id);
+            } else {
+                markers[id].setLatLng([v.lat, v.lon]);
+            }
+
+            // Détection PEC d'un autre
+            if (v.active) alertSource = id;
+
+            // Détection Proximité 500m
+            if (myPos) {
+                const d = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
+                if (d < 500) collision = true;
+            }
         }
+
+        // MAJ Interface
+        const banner = document.getElementById('notification-banner');
+        if (alertSource) {
+            banner.innerText = "🚨 ALERTE : " + alertSource.replace(/_/g, " ");
+            banner.className = "alert-active";
+        } else {
+            banner.innerText = "ZONE SÉCURISÉE";
+            banner.className = "";
+        }
+
+        if (collision) mapDiv.classList.add('proximity-alert');
+        else mapDiv.classList.remove('proximity-alert');
     });
 
-    navigator.geolocation.watchPosition((p) => { 
-        myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; 
-        myMarker.setLatLng([myPos.lat, myPos.lon]); 
-        if (firstFix) { map.setView([myPos.lat, myPos.lon], 17); firstFix = false; }
-        if (isVisible || isPEC) sendUpdate();
-    }, null, { enableHighAccuracy: true });
-
-    setInterval(() => { if (isVisible || isPEC) sendUpdate(); }, 3000);
+    // Nettoyage en quittant
+    window.onbeforeunload = () => {
+        const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
+        db.ref('vehicles/' + safeId).remove();
+    };
 </script>
 </body>
 </html>
