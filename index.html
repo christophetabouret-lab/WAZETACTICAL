@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TACTICAL DEPLOY</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+    </script>
+
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; transition: 0.3s; border: 0px solid transparent; box-sizing: border-box; }
@@ -89,7 +97,7 @@
         if ('speechSynthesis' in window) {
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'fr-FR'; utterance.rate = 1.1;
+             utterance.lang = 'fr-FR'; utterance.rate = 1.1;
             for (let i = 0; i < times; i++) { window.speechSynthesis.speak(utterance); }
         }
     }
@@ -165,12 +173,10 @@
         let currentAlert = null; let minDistance = Infinity;
         const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
         
-        // --- CORRECTION : SORTIE AUTO SI LE LEADER STOPPE ---
         if (isPEC && !isLeader && Object.keys(data).length === 0) {
             isPEC = false;
             updateUI();
         }
-        // ----------------------------------------------------
 
         for (let id in data) {
             const v = data[id];
