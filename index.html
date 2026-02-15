@@ -6,12 +6,19 @@
     <title>TACTICAL DEPLOY</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; transition: 0.3s; border: 0px solid transparent; box-sizing: border-box; }
+        
+        /* ALERTES DE PROXIMITÉ SUR TOUTE L'INTERFACE */
+        .proximity-orange { border: 8px solid #e67e22 !important; }
+        .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; }
+        @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
+
         #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0; }
         #map { flex-grow: 1; width: 100%; background: #222; }
         #notification-banner { position: absolute; top: 70px; left: 5%; width: 90%; padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; z-index: 1001; display: none; pointer-events: none; font-size: 1.1rem; border: 2px solid white; }
         .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.6; } }
+        
         #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
@@ -23,7 +30,7 @@
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box; font-size: 1rem; text-align: center; }
     </style>
 </head>
-<body>
+<body id="app-body">
 
 <div id="main-title">TACTICAL DEPLOY</div>
 <div id="notification-banner"></div>
@@ -52,7 +59,7 @@
     const idInput = document.getElementById('user-id');
     const btnSignal = document.getElementById('btn-signal');
     const btnPec = document.getElementById('btn-pec');
-    const banner = document.getElementById('notification-banner');
+    const appBody = document.getElementById('app-body');
     const silentAudio = document.getElementById('silent-bkg');
 
     idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
@@ -66,17 +73,19 @@
     let lastAlertSource = null, wakeLock = null;
     const markers = {};
 
-    // --- ANTI-VEILLE ET AUDIO HEARTBEAT ---
+    function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3;
+        const φ1 = lat1 * Math.PI/180;
+        const φ2 = lat2 * Math.PI/180;
+        const Δφ = (lat2-lat1) * Math.PI/180;
+        const Δλ = (lon2-lon1) * Math.PI/180;
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
     async function activateTacticalMode() {
-        // 1. Demande de WakeLock (Écran)
-        try {
-            if ('wakeLock' in navigator) {
-                wakeLock = await navigator.wakeLock.request('screen');
-            }
-        } catch (err) {}
-        
-        // 2. Lecture du son silencieux (Maintien CPU/GPS)
-        silentAudio.play().catch(e => console.log("Audio bloqué par navigateur"));
+        try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
+        silentAudio.play().catch(() => {});
     }
 
     function deactivateTacticalMode() {
@@ -100,7 +109,6 @@
         const safeId = name.replace(/[^a-zA-Z0-9]/g, "_");
         const activeState = forceStop ? false : isPEC;
         myMarker.setStyle({ color: activeState ? '#ff0000' : '#3498db' });
-
         if (isVisible || activeState) {
             db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: activeState, ts: Date.now() });
         } else {
@@ -112,7 +120,6 @@
         isVisible = !isVisible;
         this.classList.toggle('active', isVisible);
         this.innerText = isVisible ? "📡 QUITTER LE DISPOSITIF" : "📡 REJOINDRE LE DISPOSITIF";
-        
         if (isVisible || isPEC) activateTacticalMode(); else deactivateTacticalMode();
         sync();
     };
@@ -120,8 +127,7 @@
     btnPec.onclick = function() {
         isPEC = !isPEC;
         if (!isPEC) {
-            banner.classList.remove('alert-active');
-            banner.innerText = "";
+            document.getElementById('notification-banner').classList.remove('alert-active');
             lastAlertSource = null;
             window.speechSynthesis.cancel();
             if (!isVisible) deactivateTacticalMode();
@@ -146,12 +152,17 @@
     db.ref('vehicles').on('value', (snapshot) => {
         const data = snapshot.val() || {};
         let alertSource = null;
+        let minDistance = Infinity;
         const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
 
         for (let id in data) {
             const v = data[id];
             if (id !== mySafeId && (!v.ts || (Date.now() - v.ts > 120000))) continue;
-            if (id !== mySafeId) {
+            
+            if (id !== mySafeId && myPos) {
+                const dist = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
+                if (dist < minDistance) minDistance = dist;
+                
                 if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id.replace(/_/g, ' '));
                 markers[id].setLatLng([v.lat, v.lon]);
                 markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
@@ -161,6 +172,12 @@
 
         for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
 
+        // GESTION VISUELLE ANTI-COLLISION
+        appBody.classList.remove('proximity-orange', 'proximity-red');
+        if (minDistance <= 200) appBody.classList.add('proximity-red');
+        else if (minDistance <= 500) appBody.classList.add('proximity-orange');
+
+        const banner = document.getElementById('notification-banner');
         if (alertSource) {
             banner.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + alertSource.toUpperCase();
             banner.classList.add('alert-active');
@@ -175,11 +192,6 @@
     });
 
     document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer la base ?")) db.ref('vehicles').remove(); };
-
-    // Reprise du mode tactique si on revient sur l'application
-    document.addEventListener('visibilitychange', () => {
-        if ((isVisible || isPEC) && document.visibilityState === 'visible') activateTacticalMode();
-    });
 </script>
 </body>
 </html>
