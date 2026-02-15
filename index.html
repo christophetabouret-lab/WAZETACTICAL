@@ -27,21 +27,22 @@
 
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.6; } }
 
-        #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
+        #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
 
-        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        /* RÉORGANISATION DES BOUTONS */
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
         
         #btn-signal { background: #3498db; }
         #btn-signal.active { background: #2ecc71; border: 2px solid white; }
         
-        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 50px; font-size: 0.9rem; transition: 0.2s; }
-        #btn-pec.active { background: #c0392b; border: 2px solid white; box-shadow: 0 0 15px #ff0000; }
-        
-        #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
-        #btn-clear { background: #8e44ad; height: 35px; border: 1px solid #9b59b6; }
+        #btn-clear { background: #8e44ad; }
 
-        input { width: 100%; padding: 10px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; }
+        #btn-pec { background: #e67e22; grid-column: span 2; margin-top: 5px; height: 55px; font-size: 0.9rem; }
+        #btn-pec.active { background: #c0392b; border: 2px solid white; box-shadow: 0 0 15px #ff0000; }
+
+        input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box; font-size: 1rem; text-align: center; }
     </style>
 </head>
 <body>
@@ -54,9 +55,8 @@
     <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
     <div class="btn-grid">
         <button id="btn-signal">📡 S'AFFICHER : NON</button>
-        <button id="btn-sat">🗺️ VUE SATELLITE</button>
-        <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
         <button id="btn-clear">🧹 NETTOYER BASE</button>
+        <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
     </div>
 </div>
 
@@ -79,7 +79,6 @@
 
     const map = L.map('map', { zoomControl: false }).setView([46, 2], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    const satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
 
     const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
     let myPos = null, isVisible = false, isPEC = false, hasCentered = false;
@@ -114,8 +113,6 @@
 
     btnPec.onclick = function() {
         isPEC = !isPEC;
-        
-        // SECURITÉ 1 : Si on éteint, on nettoie le bandeau immédiatement en local
         if (!isPEC) {
             banner.classList.remove('alert-active');
             banner.innerText = "";
@@ -124,19 +121,9 @@
             btnSignal.classList.add('active');
             btnSignal.innerText = "📡 S'AFFICHER : OUI";
         }
-
         this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        
-        // SECURITÉ 2 : Envoi forcé de l'état false si c'est un arrêt
         sync(!isPEC);
-    };
-
-    let isSat = false;
-    document.getElementById('btn-sat').onclick = function() {
-        if (!isSat) map.addLayer(satLayer); else map.removeLayer(satLayer);
-        isSat = !isSat;
-        this.innerText = isSat ? "🗺️ VUE ROUTE" : "🗺️ VUE SATELLITE";
     };
 
     navigator.geolocation.watchPosition((p) => {
@@ -153,7 +140,6 @@
 
         for (let id in data) {
             if (id === mySafeId) {
-                // SECURITÉ 3 : Si je reçois ma propre alerte alors que je l'ai coupée, je l'ignore
                 if (!isPEC && data[id].active) continue;
                 if (isPEC && data[id].active) alertSource = id.replace(/_/g, ' ');
                 continue;
@@ -164,7 +150,6 @@
             if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id.replace(/_/g, ' '));
             markers[id].setLatLng([v.lat, v.lon]);
             markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
-            
             if (v.active) alertSource = id.replace(/_/g, ' ');
         }
 
@@ -178,7 +163,7 @@
         }
     });
 
-    document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer ?")) db.ref('vehicles').remove(); };
+    document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer la base ?")) db.ref('vehicles').remove(); };
 </script>
 </body>
 </html>
