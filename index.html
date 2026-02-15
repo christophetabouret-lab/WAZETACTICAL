@@ -38,6 +38,8 @@
     </div>
 </div>
 
+<audio id="silent-bkg" loop><source src="data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" type="audio/wav"></audio>
+
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -51,6 +53,7 @@
     const btnSignal = document.getElementById('btn-signal');
     const btnPec = document.getElementById('btn-pec');
     const banner = document.getElementById('notification-banner');
+    const silentAudio = document.getElementById('silent-bkg');
 
     idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
     idInput.oninput = () => localStorage.setItem('unit_name', idInput.value);
@@ -60,21 +63,34 @@
 
     const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
     let myPos = null, isVisible = false, isPEC = false, hasCentered = false;
-    let lastAlertSource = null;
+    let lastAlertSource = null, wakeLock = null;
     const markers = {};
 
-    // Fonction de synthèse vocale avec répétition x3
+    // --- ANTI-VEILLE ET AUDIO HEARTBEAT ---
+    async function activateTacticalMode() {
+        // 1. Demande de WakeLock (Écran)
+        try {
+            if ('wakeLock' in navigator) {
+                wakeLock = await navigator.wakeLock.request('screen');
+            }
+        } catch (err) {}
+        
+        // 2. Lecture du son silencieux (Maintien CPU/GPS)
+        silentAudio.play().catch(e => console.log("Audio bloqué par navigateur"));
+    }
+
+    function deactivateTacticalMode() {
+        if (wakeLock !== null) { wakeLock.release(); wakeLock = null; }
+        silentAudio.pause();
+    }
+
     function speakTriple(text) {
         if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel(); // Arrête tout message en cours
+            window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'fr-FR';
-            utterance.rate = 1.1; // Légèrement accéléré pour l'efficacité
-
-            // On lance 3 fois
-            for (let i = 0; i < 3; i++) {
-                window.speechSynthesis.speak(utterance);
-            }
+            utterance.rate = 1.1;
+            for (let i = 0; i < 3; i++) { window.speechSynthesis.speak(utterance); }
         }
     }
 
@@ -96,6 +112,8 @@
         isVisible = !isVisible;
         this.classList.toggle('active', isVisible);
         this.innerText = isVisible ? "📡 QUITTER LE DISPOSITIF" : "📡 REJOINDRE LE DISPOSITIF";
+        
+        if (isVisible || isPEC) activateTacticalMode(); else deactivateTacticalMode();
         sync();
     };
 
@@ -105,11 +123,13 @@
             banner.classList.remove('alert-active');
             banner.innerText = "";
             lastAlertSource = null;
-            window.speechSynthesis.cancel(); // Coupe la voix si on arrête la PEC
+            window.speechSynthesis.cancel();
+            if (!isVisible) deactivateTacticalMode();
         } else {
             isVisible = true;
             btnSignal.classList.add('active');
             btnSignal.innerText = "📡 QUITTER LE DISPOSITIF";
+            activateTacticalMode();
         }
         this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
@@ -131,13 +151,11 @@
         for (let id in data) {
             const v = data[id];
             if (id !== mySafeId && (!v.ts || (Date.now() - v.ts > 120000))) continue;
-
             if (id !== mySafeId) {
                 if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id.replace(/_/g, ' '));
                 markers[id].setLatLng([v.lat, v.lon]);
                 markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
             }
-
             if (v.active) alertSource = id.replace(/_/g, ' ');
         }
 
@@ -146,7 +164,6 @@
         if (alertSource) {
             banner.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + alertSource.toUpperCase();
             banner.classList.add('alert-active');
-            
             if (lastAlertSource !== alertSource) {
                 speakTriple("Attention, prise en charge par " + alertSource);
                 lastAlertSource = alertSource;
@@ -158,6 +175,11 @@
     });
 
     document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer la base ?")) db.ref('vehicles').remove(); };
+
+    // Reprise du mode tactique si on revient sur l'application
+    document.addEventListener('visibilitychange', () => {
+        if ((isVisible || isPEC) && document.visibilityState === 'visible') activateTacticalMode();
+    });
 </script>
 </body>
 </html>
