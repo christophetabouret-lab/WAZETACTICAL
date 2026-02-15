@@ -17,15 +17,23 @@
 
         #map { flex-grow: 1; width: 100%; background: #222; }
 
-        #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
-
+        /* BANDEAU D'ALERTE DYNAMIQUE */
         #notification-banner { 
+            position: absolute; top: 70px; left: 10%; width: 80%;
             padding: 12px; border-radius: 4px; font-weight: bold; text-align: center;
-            background: #27ae60; margin-bottom: 10px; font-size: 1rem;
+            z-index: 1001; display: none; /* Caché par défaut */
         }
 
-        .alert-active { background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; }
+        .alert-active { 
+            display: block !important;
+            background: #ff0000 !important; 
+            animation: pulse-red 0.5s infinite alternate;
+            box-shadow: 0 0 15px rgba(255,0,0,0.5);
+        }
+
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.7; } }
+
+        #ui-panel { padding: 10px 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
 
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
@@ -48,10 +56,11 @@
 
 <div id="main-title">TACTICAL DEPLOY</div>
 
+<div id="notification-banner"></div>
+
 <div id="map"></div>
 
 <div id="ui-panel">
-    <div id="notification-banner">ZONE SÉCURISÉE</div>
     <input type="text" id="user-id" placeholder="ID UNITÉ">
     <div class="btn-grid">
         <button id="btn-signal">📡 S'AFFICHER : NON</button>
@@ -80,7 +89,6 @@
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     let isSat = false;
 
-    // Ton point sur la carte (Bleu par défaut, Rouge en PEC)
     const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
     let myPos = null;
     let isVisible = false;
@@ -91,8 +99,6 @@
     function updateFirebase() {
         if (!myPos) return;
         const safeId = myName.replace(/[^a-zA-Z0-9]/g, "_");
-        
-        // Mise à jour de ton marqueur local
         myMarker.setStyle({ color: isPEC ? '#ff0000' : '#3498db' });
 
         if (isVisible) {
@@ -108,7 +114,7 @@
     }
 
     document.getElementById('btn-clear').onclick = function() {
-        if(confirm("Nettoyer toutes les unités de la base ?")) {
+        if(confirm("Nettoyer toutes les unités ?")) {
             db.ref('vehicles').remove();
             location.reload();
         }
@@ -122,14 +128,12 @@
     };
 
     document.getElementById('btn-pec').onclick = function() {
-        // IMPORTANT : Si tu lances une PEC, on force la visibilité pour que les autres te voient
         isPEC = !isPEC;
         if (isPEC) {
             isVisible = true;
             document.getElementById('btn-signal').classList.add('active');
             document.getElementById('btn-signal').innerText = "📡 S'AFFICHER : OUI";
         }
-        
         this.classList.toggle('active');
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
         updateFirebase(); 
@@ -151,7 +155,6 @@
         if (isVisible) updateFirebase();
     }, null, { enableHighAccuracy: true });
 
-    // Écoute des autres
     db.ref('vehicles').on('value', (snapshot) => {
         const data = snapshot.val() || {};
         let collision = false;
@@ -162,15 +165,11 @@
         for (let id in data) {
             if (id === safeMyId) continue;
             const v = data[id];
-            
-            // On ignore les unités qui n'ont pas bougé depuis 2 min
             if (!v.ts || (now - v.ts > 120000)) continue;
 
             if (!markers[id]) {
-                // Créer marker avec icône spécifique si PEC active
                 markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id);
             }
-            
             markers[id].setLatLng([v.lat, v.lon]);
             markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
 
@@ -182,16 +181,14 @@
             }
         }
 
-        // Nettoyage markers
         for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
 
         const banner = document.getElementById('notification-banner');
         if (alertSource) {
             banner.innerText = "🚨 ALERTE : " + alertSource.replace(/_/g, " ");
-            banner.className = "alert-active";
+            banner.classList.add('alert-active');
         } else {
-            banner.innerText = "ZONE SÉCURISÉE";
-            banner.className = "";
+            banner.classList.remove('alert-active');
         }
 
         if (collision) mapDiv.classList.add('proximity-alert');
