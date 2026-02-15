@@ -29,7 +29,6 @@
 
         #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
 
-        /* RÉORGANISATION DES BOUTONS */
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
@@ -54,7 +53,7 @@
 <div id="ui-panel">
     <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
     <div class="btn-grid">
-        <button id="btn-signal">📡 S'AFFICHER : NON</button>
+        <button id="btn-signal">📡 REJOINDRE LE DISPOSITIF</button>
         <button id="btn-clear">🧹 NETTOYER BASE</button>
         <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
     </div>
@@ -107,7 +106,7 @@
     btnSignal.onclick = function() {
         isVisible = !isVisible;
         this.classList.toggle('active', isVisible);
-        this.innerText = isVisible ? "📡 S'AFFICHER : OUI" : "📡 S'AFFICHER : NON";
+        this.innerText = isVisible ? "📡 QUITTER LE DISPOSITIF" : "📡 REJOINDRE LE DISPOSITIF";
         sync();
     };
 
@@ -119,7 +118,7 @@
         } else {
             isVisible = true;
             btnSignal.classList.add('active');
-            btnSignal.innerText = "📡 S'AFFICHER : OUI";
+            btnSignal.innerText = "📡 QUITTER LE DISPOSITIF";
         }
         this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
