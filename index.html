@@ -7,14 +7,31 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; transition: 0.3s; border: 0px solid transparent; box-sizing: border-box; }
+        
+        /* ALERTES DE PROXIMITÉ */
         .proximity-orange { border: 8px solid #e67e22 !important; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
+
         #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0; }
         #map { flex-grow: 1; width: 100%; background: #222; }
-        #notification-banner { position: absolute; top: 70px; left: 5%; width: 90%; padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; z-index: 1001; display: none; pointer-events: none; font-size: 1.1rem; border: 2px solid white; }
+
+        /* BANDEAU DE NOTIFICATION AMÉLIORÉ */
+        #notification-banner { 
+            position: absolute; top: 70px; left: 5%; width: 90%; padding: 15px; 
+            border-radius: 4px; font-weight: bold; text-align: center; z-index: 1001; 
+            display: none; pointer-events: auto; font-size: 1.1rem; border: 2px solid white; 
+        }
         .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
-        .alert-stopstick { display: block !important; background: #8e44ad !important; border: 2px solid white; }
+        .alert-stopstick { display: block !important; background: #8e44ad !important; border: 2px solid white; animation: none !important; }
+
+        /* BOUTONS DE CHOIX STOP STICK DANS LE BANDEAU */
+        .ss-choice-box { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+        .btn-ss-res { padding: 8px 20px; border: 2px solid white; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 0.8rem; }
+        .btn-pos { background: #2ecc71; }
+        .btn-neg { background: #e74c3c; }
+
+        @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.6; } }
         
         #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -23,13 +40,20 @@
         #btn-stopstick { background: #8e44ad; }
         #btn-pec { background: #e67e22; grid-column: span 2; height: 55px; font-size: 0.9rem; }
         #btn-pec.active { background: #c0392b; border: 2px solid white; }
+        
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box; font-size: 1rem; text-align: center; }
     </style>
 </head>
 <body id="app-body">
 
 <div id="main-title">TACTICAL DEPLOY</div>
-<div id="notification-banner"></div>
+<div id="notification-banner">
+    <div id="banner-text"></div>
+    <div id="ss-choices" class="ss-choice-box" style="display:none;">
+        <div class="btn-ss-res btn-pos" onclick="submitSS('POSITIF')">POSITIF</div>
+        <div class="btn-ss-res btn-neg" onclick="submitSS('NÉGATIF')">NÉGATIF</div>
+    </div>
+</div>
 <div id="map"></div>
 
 <div id="ui-panel">
@@ -55,6 +79,9 @@
     const idInput = document.getElementById('user-id');
     const btnPec = document.getElementById('btn-pec');
     const btnStopStick = document.getElementById('btn-stopstick');
+    const banner = document.getElementById('notification-banner');
+    const bannerText = document.getElementById('banner-text');
+    const ssChoices = document.getElementById('ss-choices');
     const appBody = document.getElementById('app-body');
     const silentAudio = document.getElementById('silent-bkg');
 
@@ -104,16 +131,14 @@
     // --- LOGIQUE STOP STICK ---
     btnStopStick.onclick = function() {
         const name = idInput.value.trim().toUpperCase();
-        db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true });
-        
-        setTimeout(() => {
-            if(confirm("RÉSULTAT STOP STICK ?\nOK = POSITIF\nANNULER = NÉGATIF")) {
-                db.ref('alerts/stopstick').set({ user: name, result: 'POSITIF', active: false });
-            } else {
-                db.ref('alerts/stopstick').set({ user: name, result: 'NÉGATIF', active: false });
-            }
-        }, 1000);
+        db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null });
     };
+
+    function submitSS(res) {
+        const name = idInput.value.trim().toUpperCase();
+        db.ref('alerts/stopstick').update({ result: res, active: false });
+        ssChoices.style.display = "none";
+    }
 
     btnPec.onclick = function() {
         isPEC = !isPEC;
@@ -146,20 +171,25 @@
     db.ref('alerts/stopstick').on('value', (s) => {
         const data = s.val();
         if (!data) return;
-        const banner = document.getElementById('notification-banner');
+        const myName = idInput.value.trim().toUpperCase();
         
         if (data.active) {
-            banner.innerText = "🚧 ATTENTION : STOP STICK PAR " + data.user;
+            bannerText.innerText = "🚧 ATTENTION : STOP STICK PAR " + data.user;
             banner.classList.add('alert-active', 'alert-stopstick');
+            if (data.user === myName) ssChoices.style.display = "flex";
             if (lastSSSource !== data.ts) {
                 speak("Attention, stop stick par " + data.user, 3);
                 lastSSSource = data.ts;
             }
         } else if (data.result) {
             banner.classList.remove('alert-stopstick');
-            speak("Résultat stop stick : " + data.result, 1);
-            banner.innerText = "🚧 BILAN STOP STICK : " + data.result;
-            setTimeout(() => { if(!lastAlertSource) banner.classList.remove('alert-active'); }, 5000);
+            bannerText.innerText = "🚧 BILAN STOP STICK : " + data.result;
+            ssChoices.style.display = "none";
+            if (lastSSSource !== data.ts + "_res") {
+                speak("Résultat stop stick : " + data.result, 1);
+                lastSSSource = data.ts + "_res";
+            }
+            setTimeout(() => { if(!lastAlertSource && !isPEC) banner.classList.remove('alert-active'); }, 5000);
         }
     });
 
@@ -184,19 +214,15 @@
         if (minDistance <= 200) appBody.classList.add('proximity-red');
         else if (minDistance <= 500) appBody.classList.add('proximity-orange');
         
-        const banner = document.getElementById('notification-banner');
-        if (currentAlert) {
-            banner.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase();
+        if (currentAlert && !banner.classList.contains('alert-stopstick')) {
+            bannerText.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase();
             banner.classList.add('alert-active');
             if (lastAlertSource !== currentAlert) { speak(currentAlert + " prend en charge", 3); lastAlertSource = currentAlert; }
-            if (!isPEC) btnPec.innerText = "📡 REJOINDRE DISPOSITIF";
-        } else {
-            if (!banner.classList.contains('alert-stopstick')) {
-                banner.classList.remove('alert-active');
-                lastAlertSource = null;
-            }
-            if (!isPEC) btnPec.innerText = "🚨 DÉMARRER PRISE EN CHARGE";
+        } else if (!currentAlert && !banner.classList.contains('alert-stopstick')) {
+            banner.classList.remove('alert-active');
+            lastAlertSource = null;
         }
+        if (!isPEC) btnPec.innerText = currentAlert ? "📡 REJOINDRE DISPOSITIF" : "🚨 DÉMARRER PRISE EN CHARGE";
     });
 
     document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer base ?")) db.ref('vehicles').remove(); };
