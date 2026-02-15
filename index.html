@@ -23,12 +23,7 @@
             z-index: 1001; display: none;
         }
 
-        .alert-active { 
-            display: block !important;
-            background: #ff0000 !important; 
-            animation: pulse-red 0.5s infinite alternate;
-            box-shadow: 0 0 15px rgba(255,0,0,0.5);
-        }
+        .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; }
 
         @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.7; } }
 
@@ -46,7 +41,7 @@
         #btn-sat { background: #2c3e50; height: 35px; border: 1px solid #7f8c8d; }
         #btn-clear { background: #8e44ad; height: 35px; border: 1px solid #9b59b6; }
 
-        input { width: 100%; padding: 10px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; font-weight: bold; }
+        input { width: 100%; padding: 10px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; }
 
         .proximity-alert { box-shadow: inset 0 0 40px #ff0000 !important; border: 6px solid #ff0000 !important; }
     </style>
@@ -58,7 +53,7 @@
 <div id="map"></div>
 
 <div id="ui-panel">
-    <input type="text" id="user-id" placeholder="ENTREZ VOTRE NOM D'UNITÉ">
+    <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ">
     <div class="btn-grid">
         <button id="btn-signal">📡 S'AFFICHER : NON</button>
         <button id="btn-sat">🗺️ VUE SATELLITE</button>
@@ -77,137 +72,105 @@
     const db = firebase.database();
 
     const idInput = document.getElementById('user-id');
-    
-    // On récupère le nom sauvegardé ou on en crée un
-    let currentName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
-    idInput.value = currentName;
+    const btnSignal = document.getElementById('btn-signal');
+    const btnPec = document.getElementById('btn-pec');
 
-    // Mise à jour en temps réel dès qu'on tape
-    idInput.oninput = () => {
-        const newName = idInput.value.trim() || "Anonyme";
-        localStorage.setItem('unit_name', newName);
-    };
+    let myName = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
+    idInput.value = myName;
 
     const map = L.map('map', { zoomControl: false }).setView([46, 2], 5);
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
-    let isSat = false;
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
 
     const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
     let myPos = null;
     let isVisible = false;
     let isPEC = false;
-    let firstZoom = true;
     const markers = {};
 
-    function updateFirebase() {
+    // FONCTION UNIQUE D'ENVOI
+    function sync() {
         if (!myPos) return;
-        
-        // ON LIT LE NOM ACTUEL DANS L'INPUT AU MOMENT DE L'ENVOI
-        const nameToSend = idInput.value.trim() || "Anonyme";
-        const safeId = nameToSend.replace(/[^a-zA-Z0-9]/g, "_");
+        const name = idInput.value.trim() || "Anonyme";
+        const safeId = name.replace(/[^a-zA-Z0-9]/g, "_");
         
         myMarker.setStyle({ color: isPEC ? '#ff0000' : '#3498db' });
 
         if (isVisible) {
-            db.ref('vehicles/' + safeId).set({ 
-                lat: myPos.lat, 
-                lon: myPos.lon, 
+            db.ref('vehicles/' + safeId).set({
+                lat: myPos.lat,
+                lon: myPos.lon,
                 active: isPEC,
                 ts: Date.now()
             });
         } else {
-            // On nettoie l'ancien ID si le nom a changé
-            db.ref('vehicles').once('value', snapshot => {
-                const data = snapshot.val();
-                for (let key in data) {
-                    if (key.includes(safeId)) db.ref('vehicles/' + key).remove();
-                }
-            });
+            db.ref('vehicles/' + safeId).remove();
         }
     }
 
-    document.getElementById('btn-clear').onclick = function() {
-        if(confirm("Nettoyer toutes les unités ?")) {
-            db.ref('vehicles').remove();
-            location.reload();
-        }
-    };
-
-    document.getElementById('btn-signal').onclick = function() {
+    // BOUTON S'AFFICHER
+    btnSignal.onclick = function() {
         isVisible = !isVisible;
-        this.classList.toggle('active');
+        this.classList.toggle('active', isVisible);
         this.innerText = isVisible ? "📡 S'AFFICHER : OUI" : "📡 S'AFFICHER : NON";
-        updateFirebase();
+        sync();
     };
 
-    document.getElementById('btn-pec').onclick = function() {
+    // BOUTON PEC
+    btnPec.onclick = function() {
         isPEC = !isPEC;
         if (isPEC) {
-            isVisible = true;
-            document.getElementById('btn-signal').classList.add('active');
-            document.getElementById('btn-signal').innerText = "📡 S'AFFICHER : OUI";
+            isVisible = true; // Force l'affichage si on lance une PEC
+            btnSignal.classList.add('active');
+            btnSignal.innerText = "📡 S'AFFICHER : OUI";
         }
-        this.classList.toggle('active');
+        this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        updateFirebase(); 
+        sync();
     };
 
+    // VUE SATELLITE
+    let isSat = false;
     document.getElementById('btn-sat').onclick = function() {
-        if (!isSat) { map.removeLayer(osm); map.addLayer(sat); this.innerText = "🗺️ VUE ROUTE"; } 
-        else { map.removeLayer(sat); map.addLayer(osm); this.innerText = "🗺️ VUE SATELLITE"; }
+        if (!isSat) map.addLayer(satLayer); else map.removeLayer(satLayer);
         isSat = !isSat;
+        this.innerText = isSat ? "🗺️ VUE ROUTE" : "🗺️ VUE SATELLITE";
     };
 
+    // GPS
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
-        if (firstZoom) {
-            map.setView([myPos.lat, myPos.lon], 16);
-            firstZoom = false;
-        }
-        if (isVisible) updateFirebase();
+        if (isVisible) sync();
     }, null, { enableHighAccuracy: true });
 
+    // RECEPTION
     db.ref('vehicles').on('value', (snapshot) => {
         const data = snapshot.val() || {};
-        let collision = false;
         let alertSource = null;
-        const currentSafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
-        const now = Date.now();
+        const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
 
         for (let id in data) {
-            if (id === currentSafeId) continue;
+            if (id === mySafeId) continue;
             const v = data[id];
-            if (!v.ts || (now - v.ts > 120000)) continue;
+            if (!v.ts || (Date.now() - v.ts > 120000)) continue;
 
-            if (!markers[id]) {
-                markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id.replace(/_/g, ' '));
-            }
+            if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id);
             markers[id].setLatLng([v.lat, v.lon]);
             markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
-
-            if (v.active === true) alertSource = id.replace(/_/g, ' ');
-
-            if (myPos) {
-                const d = L.latLng(myPos.lat, myPos.lon).distanceTo(L.latLng(v.lat, v.lon));
-                if (d < 500) collision = true;
-            }
+            if (v.active) alertSource = id;
         }
-
-        for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
 
         const banner = document.getElementById('notification-banner');
         if (alertSource) {
-            banner.innerText = "🚨 ALERTE : " + alertSource.toUpperCase();
+            banner.innerText = "🚨 ALERTE : " + alertSource.replace(/_/g, " ").toUpperCase();
             banner.classList.add('alert-active');
         } else {
             banner.classList.remove('alert-active');
         }
-
-        if (collision) document.getElementById('map').classList.add('proximity-alert');
-        else document.getElementById('map').classList.remove('proximity-alert');
     });
+
+    document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer ?")) db.ref('vehicles').remove(); };
 </script>
 </body>
 </html>
