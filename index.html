@@ -8,7 +8,6 @@
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; transition: 0.3s; border: 0px solid transparent; box-sizing: border-box; }
         
-        /* ALERTES DE PROXIMITÉ SUR TOUTE L'INTERFACE */
         .proximity-orange { border: 8px solid #e67e22 !important; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
@@ -17,7 +16,6 @@
         #map { flex-grow: 1; width: 100%; background: #222; }
         #notification-banner { position: absolute; top: 70px; left: 5%; width: 90%; padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; z-index: 1001; display: none; pointer-events: none; font-size: 1.1rem; border: 2px solid white; }
         .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
-        @keyframes pulse-red { from { opacity: 1; } to { opacity: 0.6; } }
         
         #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -77,9 +75,7 @@
         const R = 6371e3;
         const φ1 = lat1 * Math.PI/180;
         const φ2 = lat2 * Math.PI/180;
-        const Δφ = (lat2-lat1) * Math.PI/180;
-        const Δλ = (lon2-lon1) * Math.PI/180;
-        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const a = Math.sin(((lat2-lat1)*Math.PI/180)/2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(((lon2-lon1)*Math.PI/180)/2) ** 2;
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
@@ -103,14 +99,18 @@
         }
     }
 
-    function sync(forceStop = false) {
+    function sync(forceRemove = false) {
         if (!myPos) return;
         const name = idInput.value.trim() || "Anonyme";
         const safeId = name.replace(/[^a-zA-Z0-9]/g, "_");
-        const activeState = forceStop ? false : isPEC;
-        myMarker.setStyle({ color: activeState ? '#ff0000' : '#3498db' });
-        if (isVisible || activeState) {
-            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: activeState, ts: Date.now() });
+        
+        if (forceRemove) {
+            db.ref('vehicles/' + safeId).remove();
+            return;
+        }
+
+        if (isVisible || isPEC) {
+            db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
         } else {
             db.ref('vehicles/' + safeId).remove();
         }
@@ -131,22 +131,24 @@
             lastAlertSource = null;
             window.speechSynthesis.cancel();
             if (!isVisible) deactivateTacticalMode();
+            sync(true); // NETTOYAGE AUTOMATIQUE LORS DU STOP
         } else {
             isVisible = true;
             btnSignal.classList.add('active');
             btnSignal.innerText = "📡 QUITTER LE DISPOSITIF";
             activateTacticalMode();
+            sync();
         }
         this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
-        sync(!isPEC);
     };
 
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
+        myMarker.setStyle({ color: isPEC ? '#ff0000' : '#3498db' });
         if (!hasCentered) { map.setView([myPos.lat, myPos.lon], 16); hasCentered = true; }
-        if (isVisible) sync();
+        if (isVisible || isPEC) sync();
     }, null, { enableHighAccuracy: true });
 
     db.ref('vehicles').on('value', (snapshot) => {
@@ -172,7 +174,6 @@
 
         for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
 
-        // GESTION VISUELLE ANTI-COLLISION
         appBody.classList.remove('proximity-orange', 'proximity-red');
         if (minDistance <= 200) appBody.classList.add('proximity-red');
         else if (minDistance <= 500) appBody.classList.add('proximity-orange');
