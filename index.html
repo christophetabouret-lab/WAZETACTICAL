@@ -15,6 +15,11 @@
         #notification-banner { position: absolute; top: 70px; left: 5%; width: 90%; padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; z-index: 1001; display: none; pointer-events: auto; font-size: 1.1rem; border: 2px solid white; }
         .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
         .alert-stopstick { display: block !important; background: #8e44ad !important; border: 2px solid white; animation: none !important; }
+        
+        /* COULEURS DES RÉSULTATS */
+        .ss-success { background: #2ecc71 !important; border-color: white !important; }
+        .ss-fail { background: #e74c3c !important; border-color: white !important; }
+
         .ss-choice-box { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
         .btn-ss-res { padding: 8px 20px; border: 2px solid white; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 0.8rem; }
         .btn-pos { background: #2ecc71; }
@@ -156,6 +161,8 @@
         if (!data) return;
         const myName = idInput.value.trim().toUpperCase();
         
+        banner.classList.remove('ss-success', 'ss-fail'); // Nettoyage couleurs
+
         if (data.active) {
             bannerText.innerText = "🚧 ATTENTION : STOP STICK PAR " + data.user;
             banner.classList.add('alert-active', 'alert-stopstick');
@@ -166,13 +173,18 @@
             }
         } else if (data.result) {
             banner.classList.remove('alert-stopstick');
-            bannerText.innerText = "🚧 BILAN : STOP STICK " + data.result;
+            banner.classList.add(data.result === 'POSITIF' ? 'ss-success' : 'ss-fail');
+            bannerText.innerText = data.result === 'POSITIF' ? "🚧 STOP STICK : RÉUSSITE" : "🚧 STOP STICK : ÉCHEC";
+            
             ssChoices.style.display = "none";
             if (lastSSSource !== data.ts + "_res") {
-                speak("Stop stick " + data.result, 3); // Répété 3 fois, sans le mot "résultat"
+                speak("Stop stick " + data.result, 3);
                 lastSSSource = data.ts + "_res";
             }
-            setTimeout(() => { if(!lastAlertSource && !isPEC) banner.classList.remove('alert-active'); }, 5000);
+            setTimeout(() => { 
+                banner.classList.remove('ss-success', 'ss-fail');
+                if(!lastAlertSource && !isPEC) banner.classList.remove('alert-active'); 
+            }, 5000);
         }
     });
 
@@ -197,11 +209,11 @@
         if (minDistance <= 200) appBody.classList.add('proximity-red');
         else if (minDistance <= 500) appBody.classList.add('proximity-orange');
         
-        if (currentAlert && !banner.classList.contains('alert-stopstick')) {
+        if (currentAlert && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('ss-fail')) {
             bannerText.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase();
             banner.classList.add('alert-active');
             if (lastAlertSource !== currentAlert) { speak(currentAlert + " prend en charge", 3); lastAlertSource = currentAlert; }
-        } else if (!currentAlert && !banner.classList.contains('alert-stopstick')) {
+        } else if (!currentAlert && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('ss-fail')) {
             banner.classList.remove('alert-active');
             lastAlertSource = null;
         }
