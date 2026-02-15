@@ -137,18 +137,32 @@
     btnPec.onclick = function() {
         isPEC = !isPEC;
         const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
+        
         if (!isPEC) {
+            // SI JE SUIS LE LEADER ET QUE JE STOPPE : JE RESET TOUT LE MONDE
             if (isLeader) {
                 db.ref('vehicles').once('value', s => {
                     const data = s.val();
-                    for(let id in data) if(data[id].active) db.ref('vehicles/' + id).update({ active: false });
+                    for(let id in data) {
+                        // On passe tout le monde à active:false
+                        db.ref('vehicles/' + id).update({ active: false });
+                    }
                 });
+                // On retire aussi l'alerte Stop Stick si elle était active
+                db.ref('alerts/stopstick').remove();
             }
-            sync(true); isLeader = false; handleTacticalMode(false);
+            sync(true); 
+            isLeader = false; 
+            handleTacticalMode(false);
         } else {
-            if (!lastAlertSource) isLeader = true; 
-            handleTacticalMode(true); sync();
+            // SI AUCUNE ALERTE EN COURS : JE DEVIENS LE LEADER
+            if (!lastAlertSource) {
+                isLeader = true;
+            }
+            handleTacticalMode(true); 
+            sync();
         }
+        
         this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : (lastAlertSource ? "📡 REJOINDRE DISPOSITIF" : "🚨 DÉMARRER PRISE EN CHARGE");
     };
@@ -156,16 +170,17 @@
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
-        
-        // --- MODIFICATION : SUIVI GPS PERMANENT (MISSION OU NON) ---
         map.panTo([myPos.lat, myPos.lon]); 
-        
         if (!hasCentered) { map.setView([myPos.lat, myPos.lon], 16); hasCentered = true; }
         if (isPEC) sync();
     }, null, { enableHighAccuracy: true });
 
     db.ref('alerts/stopstick').on('value', (s) => {
-        const data = s.val(); if (!data) return;
+        const data = s.val(); if (!data) {
+            banner.classList.remove('alert-active', 'alert-stopstick', 'ss-success', 'ss-fail');
+            ssChoices.style.display = "none";
+            return;
+        }
         const myName = idInput.value.trim().toUpperCase();
         banner.classList.remove('ss-success', 'ss-fail');
         if (data.active) {
@@ -187,6 +202,7 @@
         const data = snapshot.val() || {};
         let currentAlert = null; let minDistance = Infinity;
         const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
+
         for (let id in data) {
             const v = data[id];
             if (id !== mySafeId && (!v.ts || (Date.now() - v.ts > 120000))) continue;
@@ -200,9 +216,11 @@
             if (v.active) currentAlert = id.replace(/_/g, ' ');
         }
         for (let id in markers) if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
+        
         appBody.classList.remove('proximity-orange', 'proximity-red');
         if (minDistance <= 200) appBody.classList.add('proximity-red');
         else if (minDistance <= 500) appBody.classList.add('proximity-orange');
+
         if (currentAlert && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('ss-fail')) {
             bannerText.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase();
             banner.classList.add('alert-active');
@@ -214,7 +232,7 @@
     });
 
     document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer base ?")) db.ref('vehicles').remove(); };
-    document.addEventListener('visibilitychange', () => { if (isPEC && document.visibilityState === 'visible') requestWakeLock(); });
+    document.addEventListener('visibilitychange', () => { if (isPEC && document.visibilityState === 'visible') handleTacticalMode(true); });
 </script>
 </body>
 </html>
