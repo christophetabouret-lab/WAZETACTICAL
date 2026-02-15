@@ -14,23 +14,22 @@
         #map { flex-grow: 1; width: 100%; background: #222; }
         #notification-banner { position: absolute; top: 70px; left: 5%; width: 90%; padding: 15px; border-radius: 4px; font-weight: bold; text-align: center; z-index: 1001; display: none; pointer-events: auto; font-size: 1.1rem; border: 2px solid white; }
         .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
-        .alert-stopstick { display: block !important; background: #8e44ad !important; border: 2px solid white; }
-        .ss-success { background: #2ecc71 !important; }
-        .ss-fail { background: #e74c3c !important; }
         #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; flex-shrink: 0; border-top: 2px solid #444; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
         #btn-clear { background: #444; }
         #btn-stopstick { background: #8e44ad; }
         #btn-pec { background: #e67e22; grid-column: span 2; height: 55px; font-size: 0.9rem; }
-        #btn-pec.active-leader { background: #c0392b; border: 2px solid white; }
-        #btn-pec.active-join { background: #34495e; border: 1px solid #7f8c8d; }
+        .active-leader { background: #c0392b !important; border: 2px solid white; }
+        .active-join { background: #34495e !important; }
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box; font-size: 1rem; text-align: center; }
-        #wake-video { position: absolute; width: 1px; height: 1px; opacity: 0.01; pointer-events: none; }
+        /* Canvas anti-veille invisible */
+        #nosleep-canvas { position: absolute; bottom: 0; right: 0; width: 1px; height: 1px; opacity: 0.01; }
     </style>
 </head>
 <body id="app-body">
 
+<canvas id="nosleep-canvas"></canvas>
 <div id="main-title">TACTICAL DEPLOY</div>
 <div id="notification-banner"><div id="banner-text"></div></div>
 <div id="map"></div>
@@ -45,7 +44,6 @@
 </div>
 
 <audio id="silent-audio" loop><source src="data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" type="audio/wav"></audio>
-<video id="wake-video" playsinline muted loop></video>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
@@ -61,15 +59,15 @@
     const banner = document.getElementById('notification-banner');
     const bannerText = document.getElementById('banner-text');
     const silentAudio = document.getElementById('silent-audio');
-    const wakeVideo = document.getElementById('wake-video');
+    const nsCanvas = document.getElementById('nosleep-canvas');
+    const nsCtx = nsCanvas.getContext('2d');
 
-    idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
-    
     const map = L.map('map', { zoomControl: false }).setView([46, 2], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
 
-    let myPos = null, isPEC = false, isLeader = false, lastAlertSource = null;
+    let myPos = null, isPEC = false, isLeader = false, lastAlertSource = null, hasCentered = false;
+    let wakeLock = null, nsInterval = null;
     const markers = {};
 
     function speak(text, times = 1) {
@@ -78,6 +76,23 @@
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'fr-FR'; utterance.rate = 1.1;
             for (let i = 0; i < times; i++) { window.speechSynthesis.speak(utterance); }
+        }
+    }
+
+    // ANTI-VEILLE RADICALE
+    async function toggleNoSleep(on) {
+        if (on) {
+            try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
+            silentAudio.play().catch(()=>{});
+            // Force le CPU/GPU par un dessin constant
+            nsInterval = setInterval(() => {
+                nsCtx.fillStyle = `rgb(${Math.random()*255},0,0)`;
+                nsCtx.fillRect(0,0,1,1);
+            }, 100);
+        } else {
+            if (wakeLock) { wakeLock.release(); wakeLock = null; }
+            silentAudio.pause();
+            clearInterval(nsInterval);
         }
     }
 
@@ -91,47 +106,40 @@
     btnPec.onclick = function() {
         isPEC = !isPEC;
         const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
-
         if (!isPEC) {
             if (isLeader) {
-                // LE LEADER COUPE TOUT POUR TOUT LE MONDE
                 db.ref('vehicles').once('value', s => {
                     const data = s.val();
                     for(let id in data) db.ref('vehicles/' + id).update({ active: false });
                 });
-                db.ref('alerts/stopstick').remove();
             }
-            sync(true); 
-            isLeader = false;
-            silentAudio.pause(); wakeVideo.pause();
+            sync(true); isLeader = false; toggleNoSleep(false);
         } else {
-            // SI PAS D'ALERTE : JE DEVIENS LEADER
-            if (!lastAlertSource) { isLeader = true; }
-            silentAudio.play().catch(() => {}); wakeVideo.play().catch(() => {});
+            if (!lastAlertSource) isLeader = true;
+            toggleNoSleep(true);
             sync();
         }
-        updateButtonUI();
+        updateUI();
     };
 
-    function updateButtonUI() {
+    function updateUI() {
         btnPec.classList.remove('active-leader', 'active-join');
         if (!isPEC) {
             btnPec.innerText = lastAlertSource ? "📡 REJOINDRE DISPOSITIF" : "🚨 DÉMARRER PRISE EN CHARGE";
         } else {
-            if (isLeader) {
-                btnPec.classList.add('active-leader');
-                btnPec.innerText = "🛑 STOP INTERCEPTION (GLOBAL)";
-            } else {
-                btnPec.classList.add('active-join');
-                btnPec.innerText = "🏃 QUITTER LE DISPOSITIF";
-            }
+            if (isLeader) { btnPec.classList.add('active-leader'); btnPec.innerText = "🛑 STOP INTERCEPTION (GLOBAL)"; }
+            else { btnPec.classList.add('active-join'); btnPec.innerText = "🏃 QUITTER LE DISPOSITIF"; }
         }
     }
 
     navigator.geolocation.watchPosition((p) => {
         myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
         myMarker.setLatLng([myPos.lat, myPos.lon]);
+        
+        // RETABLISSEMENT DU ZOOM ET SUIVI
         map.panTo([myPos.lat, myPos.lon]);
+        if (!hasCentered) { map.setZoom(16); hasCentered = true; }
+        
         if (isPEC) sync();
     }, null, { enableHighAccuracy: true });
 
@@ -140,15 +148,12 @@
         let currentAlert = null;
         for (let id in data) {
             const v = data[id];
-            const name = id.replace(/_/g, ' ');
+            if (v.active) currentAlert = id.replace(/_/g, ' ');
             if (id !== idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_")) {
                 if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map);
                 markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
             }
-            if (v.active) currentAlert = name;
         }
-        for (let id in markers) if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
-
         if (currentAlert) {
             bannerText.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase();
             banner.classList.add('alert-active');
@@ -157,16 +162,16 @@
             banner.classList.remove('alert-active');
             if (lastAlertSource) { speak("Fin de l'alerte", 1); lastAlertSource = null; }
         }
-        if (!isPEC) updateButtonUI();
+        if (!isPEC) updateUI();
     });
 
     document.getElementById('btn-stopstick').onclick = () => {
         const name = idInput.value.trim().toUpperCase();
         db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true });
-        setTimeout(() => { db.ref('alerts/stopstick').update({ active: false, result: 'DÉPLOYÉ' }); }, 3000);
+        setTimeout(() => db.ref('alerts/stopstick').remove(), 5000);
     };
 
-    document.getElementById('btn-clear').onclick = () => { if(confirm("Réinitialiser ?")) db.ref('vehicles').remove(); };
+    document.getElementById('btn-clear').onclick = () => { if(confirm("Reset ?")) db.ref('vehicles').remove(); };
 </script>
 </body>
 </html>
