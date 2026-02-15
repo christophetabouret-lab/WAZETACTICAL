@@ -73,9 +73,8 @@
 
     function getDistance(lat1, lon1, lat2, lon2) {
         const R = 6371e3;
-        const φ1 = lat1 * Math.PI/180;
-        const φ2 = lat2 * Math.PI/180;
-        const a = Math.sin(((lat2-lat1)*Math.PI/180)/2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(((lon2-lon1)*Math.PI/180)/2) ** 2;
+        const φ1 = lat1 * Math.PI/180; const φ2 = lat2 * Math.PI/180;
+        const a = Math.sin(((lat2-lat1)*Math.PI/180)/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(((lon2-lon1)*Math.PI/180)/2)**2;
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
@@ -93,22 +92,15 @@
         if ('speechSynthesis' in window) {
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'fr-FR';
-            utterance.rate = 1.1;
+            utterance.lang = 'fr-FR'; utterance.rate = 1.1;
             for (let i = 0; i < 3; i++) { window.speechSynthesis.speak(utterance); }
         }
     }
 
-    function sync(forceRemove = false) {
+    function sync() {
         if (!myPos) return;
         const name = idInput.value.trim() || "Anonyme";
         const safeId = name.replace(/[^a-zA-Z0-9]/g, "_");
-        
-        if (forceRemove) {
-            db.ref('vehicles/' + safeId).remove();
-            return;
-        }
-
         if (isVisible || isPEC) {
             db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isPEC, ts: Date.now() });
         } else {
@@ -126,21 +118,23 @@
 
     btnPec.onclick = function() {
         isPEC = !isPEC;
+        const name = idInput.value.trim() || "Anonyme";
+        const safeId = name.replace(/[^a-zA-Z0-9]/g, "_");
+
         if (!isPEC) {
-            document.getElementById('notification-banner').classList.remove('alert-active');
-            lastAlertSource = null;
+            // --- REMISE À ZÉRO GLOBALE ---
+            db.ref('vehicles/' + safeId).update({ active: false }); // On informe les autres
             window.speechSynthesis.cancel();
             if (!isVisible) deactivateTacticalMode();
-            sync(true); // NETTOYAGE AUTOMATIQUE LORS DU STOP
         } else {
             isVisible = true;
             btnSignal.classList.add('active');
             btnSignal.innerText = "📡 QUITTER LE DISPOSITIF";
             activateTacticalMode();
-            sync();
         }
         this.classList.toggle('active', isPEC);
         this.innerText = isPEC ? "🛑 STOP INTERCEPTION" : "🚨 DÉMARRER PRISE EN CHARGE";
+        sync();
     };
 
     navigator.geolocation.watchPosition((p) => {
@@ -164,7 +158,6 @@
             if (id !== mySafeId && myPos) {
                 const dist = getDistance(myPos.lat, myPos.lon, v.lat, v.lon);
                 if (dist < minDistance) minDistance = dist;
-                
                 if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindPopup(id.replace(/_/g, ' '));
                 markers[id].setLatLng([v.lat, v.lon]);
                 markers[id].setStyle({ color: v.active ? '#ff0000' : '#2ecc71' });
@@ -174,6 +167,7 @@
 
         for (let id in markers) { if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
 
+        // Alertes de proximité
         appBody.classList.remove('proximity-orange', 'proximity-red');
         if (minDistance <= 200) appBody.classList.add('proximity-red');
         else if (minDistance <= 500) appBody.classList.add('proximity-orange');
@@ -187,7 +181,10 @@
                 lastAlertSource = alertSource;
             }
         } else {
+            // RÉINITIALISATION LOCALE QUAND L'ALERTE S'ARRÊTE DANS LA BASE
             banner.classList.remove('alert-active');
+            banner.innerText = "";
+            window.speechSynthesis.cancel();
             lastAlertSource = null;
         }
     });
