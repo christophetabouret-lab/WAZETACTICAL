@@ -1,19 +1,19 @@
 {
-  "short_name": "TacticalDeploy",
+  "short_name": "Tactical",
   "name": "TACTICAL DEPLOY",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2554/2554930.png",
+      "src": "logo.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"
     }
   ],
   "start_url": "./index.html",
-  "background_color": "#1a1a1a",
-  "display": "standalone",
+  "background_color": "#000000",
+  "display": "fullscreen",
   "scope": "./",
-  "theme_color": "#e74c3c",
+  "theme_color": "#000000",
   "description": "Système de suivi tactique et alertes.",
   "id": "com.tactical.deploy"
 }
