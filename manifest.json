@@ -1,6 +1,6 @@
 {
   "short_name": "TacticalDeploy",
-  "name": "TACTICAL DEPLOY - PROJET TCHAT",
+  "name": "TACTICAL DEPLOY",
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/2554/2554930.png",
@@ -14,5 +14,6 @@
   "display": "standalone",
   "scope": "./",
   "theme_color": "#e74c3c",
-  "description": "Système de suivi tactique et alertes stop-stick."
+  "description": "Système de suivi tactique et alertes.",
+  "id": "com.tactical.deploy"
 }
