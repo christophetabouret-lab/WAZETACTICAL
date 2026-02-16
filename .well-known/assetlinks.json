@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.tactical.deploy",
+    "sha256_cert_fingerprints": ["06:F1:01:B8:59:CE:85:30:40:7A:B1:52:B1:23:6D:B9:62:70:0C:39:E3:C1:39:8B:2F:1B:D5:B6:CD:C7:5B:84"]
+  }
+}]
