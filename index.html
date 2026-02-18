@@ -96,18 +96,13 @@
         const pecChoices = document.getElementById('pec-choices');
         const appBody = document.getElementById('app-body');
         
-        idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
-        idInput.oninput = () => localStorage.setItem('unit_name', idInput.value);
-        
         const map = L.map('map', { zoomControl: false }).setView([46, 2], 16);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
         
         let myPos = null, isPEC = false, isLeader = false, lastAlertSource = null, lastSSSource = null, lastEndSource = null;
         const markers = {};
-        
-        function getDistance(lat1, lon1, lat2, lon2) { const R = 6371e3; const φ1 = lat1 * Math.PI/180; const φ2 = lat2 * Math.PI/180; const a = Math.sin(((lat2-lat1)*Math.PI/180)/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(((lon2-lon1)*Math.PI/180)/2)**2; return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); }
-        
+
         function speak(text, times = 2) { 
             if ('speechSynthesis' in window) { 
                 window.speechSynthesis.cancel(); 
@@ -116,13 +111,12 @@
                 for (let i = 0; i < times; i++) { window.speechSynthesis.speak(utterance); } 
             } 
         }
-        
+
         window.submitSS = (res) => { db.ref('alerts/stopstick').update({ result: res, active: false, ts: Date.now() }); setTimeout(() => db.ref('alerts/stopstick').remove(), 5000); };
-        
         window.endInterception = (res) => {
             db.ref('alerts/end').set({ result: res, user: idInput.value.trim().toUpperCase(), ts: Date.now() });
             db.ref('vehicles').remove();
-            setTimeout(() => db.ref('alerts').remove(), 5000);
+            setTimeout(() => { db.ref('alerts').remove(); pecChoices.style.display = "none"; }, 5000);
             isPEC = false; isLeader = false; updateUI();
         };
 
@@ -132,9 +126,9 @@
             if (remove) { db.ref('vehicles/' + safeId).remove(); } 
             else { db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now(), joining: joining ? Date.now() : null }); } 
         }
-        
+
         navigator.geolocation.watchPosition((p) => { myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; myMarker.setLatLng([myPos.lat, myPos.lon]); map.setView([myPos.lat, myPos.lon], map.getZoom()); if (isPEC) sync(); }, null, { enableHighAccuracy: true });
-        
+
         btnPec.onclick = function() { 
             const unitName = idInput.value.trim().toUpperCase(); 
             if (isPEC && isLeader) {
@@ -145,87 +139,65 @@
             }
             isPEC = !isPEC; 
             if (!isPEC) { sync(true); isLeader = false; } 
-            else { 
-                if (!lastAlertSource) { isLeader = true; sync(); } 
-                else { sync(false, true); }
-            } 
+            else { if (!lastAlertSource) { isLeader = true; sync(); } else { sync(false, true); } } 
             updateUI(); 
         };
-        
+
         btnClear.onclick = () => { if(confirm("Nettoyer Unités + Alertes ?")) { db.ref('vehicles').remove(); db.ref('alerts').remove(); location.reload(); } };
-        
-        function updateUI() { 
-            btnPec.classList.toggle('active-leader', (isLeader && isPEC)); 
-            btnPec.innerText = isPEC ? (isLeader ? "🛑 STOP INTERCEPTION (CHOIX)" : "🏃 QUITTER LE DISPOSITIF") : (lastAlertSource ? "📡 REJOINDRE DISPOSITIF" : "🚨 DÉMARRER PRISE EN CHARGE"); 
-        }
-        
-        // Surveillance Fin Interception
+        function updateUI() { btnPec.classList.toggle('active-leader', (isLeader && isPEC)); btnPec.innerText = isPEC ? (isLeader ? "🛑 STOP INTERCEPTION (CHOIX)" : "🏃 QUITTER LE DISPOSITIF") : (lastAlertSource ? "📡 REJOINDRE DISPOSITIF" : "🚨 DÉMARRER PRISE EN CHARGE"); }
+
         db.ref('alerts/end').on('value', (s) => {
-            const data = s.val();
-            if (!data) return;
+            const data = s.val(); if (!data) return;
             bannerText.innerText = "🏁 FIN : " + data.result + " PAR " + data.user;
-            banner.classList.remove('alert-stopstick', 'ss-success', 'ss-fail');
-            banner.classList.add('alert-active', data.result === 'INTERPELLATION' ? 'end-success' : 'end-lost');
+            banner.className = 'alert-active ' + (data.result === 'INTERPELLATION' ? 'end-success' : 'end-lost');
             pecChoices.style.display = "none";
             if (lastEndSource !== data.ts) { speak("Fin d'interception, " + data.result); lastEndSource = data.ts; }
-            setTimeout(() => { banner.classList.remove('alert-active', 'end-success', 'end-lost'); }, 5000);
+            setTimeout(() => { banner.style.display = 'none'; banner.className = ''; }, 5000);
         });
 
         db.ref('alerts/stopstick').on('value', (s) => { 
             const data = s.val(); 
-            if (!data) { banner.classList.remove('alert-stopstick', 'ss-success', 'ss-fail'); ssChoices.style.display = "none"; if(!lastAlertSource && !isPEC) banner.classList.remove('alert-active'); return; } 
+            if (!data) { banner.classList.remove('alert-stopstick', 'ss-success', 'ss-fail'); ssChoices.style.display = "none"; return; } 
             if (data.active) { 
                 bannerText.innerText = "🚧 ATTENTION : STOP STICK PAR " + data.user; 
                 banner.classList.add('alert-active', 'alert-stopstick'); 
                 if (data.user === idInput.value.trim().toUpperCase()) ssChoices.style.display = "flex"; 
                 if (lastSSSource !== data.ts) { speak("Attention, stop stick par " + data.user); lastSSSource = data.ts; } 
             } else if (data.result) { 
-                banner.classList.remove('alert-stopstick'); 
-                banner.classList.add(data.result === 'POSITIF' ? 'ss-success' : 'ss-fail'); 
+                banner.classList.remove('alert-stopstick'); banner.classList.add(data.result === 'POSITIF' ? 'ss-success' : 'ss-fail'); 
                 bannerText.innerText = "🚧 STOP STICK : " + (data.result === 'POSITIF' ? 'RÉUSSITE' : 'ÉCHEC'); 
                 ssChoices.style.display = "none"; 
                 if (lastSSSource !== data.ts + "_res") { speak("Stop stick " + data.result); lastSSSource = data.ts + "_res"; } 
-                setTimeout(() => { banner.classList.remove('ss-success', 'ss-fail'); if(!lastAlertSource && !isPEC) banner.classList.remove('alert-active'); }, 5000); 
+                setTimeout(() => { banner.classList.remove('ss-success', 'ss-fail'); }, 5000); 
             } 
         });
-        
+
         db.ref('vehicles').on('value', (snapshot) => { 
-            const data = snapshot.val() || {}; 
-            let currentAlert = null; 
-            let minDistance = Infinity; 
+            const data = snapshot.val() || {}; let currentAlert = null; let minDistance = Infinity; 
             const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); 
             for (let id in data) { 
-                const v = data[id]; 
-                const cleanId = id.replace(/_/g, ' ');
-                if (v.active) currentAlert = cleanId; 
-                if (v.joining && v.joining > Date.now() - 5000 && id !== mySafeId && markers[id]?.lastJoin !== v.joining) {
-                    speak(cleanId + " rejoint le dispositif");
-                    if (markers[id]) markers[id].lastJoin = v.joining;
-                }
+                const v = data[id]; const cleanId = id.replace(/_/g, ' '); if (v.active) currentAlert = cleanId; 
+                if (v.joining && v.joining > Date.now() - 5000 && id !== mySafeId && markers[id]?.lastJoin !== v.joining) { speak(cleanId + " rejoint le dispositif"); if (markers[id]) markers[id].lastJoin = v.joining; }
                 if (id !== mySafeId) { 
                     if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map); 
                     markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71' }); 
-                    if (myPos) { const d = getDistance(myPos.lat, myPos.lon, v.lat, v.lon); if (d < minDistance) minDistance = d; } 
+                    if (myPos) { const d = 2 * 6371e3 * Math.atan2(Math.sqrt(Math.sin(((v.lat-myPos.lat)*Math.PI/180)/2)**2 + Math.cos(myPos.lat*Math.PI/180)*Math.cos(v.lat*Math.PI/180)*Math.sin(((v.lon-myPos.lon)*Math.PI/180)/2)**2), Math.sqrt(1-(Math.sin(((v.lat-myPos.lat)*Math.PI/180)/2)**2 + Math.cos(myPos.lat*Math.PI/180)*Math.cos(v.lat*Math.PI/180)*Math.sin(((v.lon-myPos.lon)*Math.PI/180)/2)**2))); if (d < minDistance) minDistance = d; } 
                 } 
             } 
             for (let id in markers) if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } 
-            appBody.classList.remove('proximity-orange', 'proximity-red'); 
-            if (minDistance <= 200) { appBody.classList.add('proximity-red'); } 
-            else if (minDistance <= 500) { appBody.classList.add('proximity-orange'); } 
-            if (currentAlert && !banner.classList.contains('alert-stopstick') && !pecChoices.style.display === "flex") { 
+            appBody.classList.remove('proximity-orange', 'proximity-red'); if (minDistance <= 200) appBody.classList.add('proximity-red'); else if (minDistance <= 500) appBody.classList.add('proximity-orange'); 
+            
+            // RÉTABLISSEMENT ALERTE PEC
+            if (currentAlert && !banner.classList.contains('alert-stopstick') && pecChoices.style.display !== "flex") { 
                 bannerText.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase(); 
                 banner.classList.add('alert-active'); 
                 if (lastAlertSource !== currentAlert) { speak(currentAlert + " prend en charge"); lastAlertSource = currentAlert; } 
-            } else if (!currentAlert && !banner.classList.contains('alert-stopstick') && !pecChoices.style.display === "flex") { 
+            } else if (!currentAlert && !banner.classList.contains('alert-stopstick') && pecChoices.style.display !== "flex") { 
                 banner.classList.remove('alert-active'); lastAlertSource = null; 
             } 
             updateUI(); 
         });
-        
-        document.getElementById('btn-stopstick').onclick = () => { 
-            const name = idInput.value.trim().toUpperCase(); 
-            db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null }); 
-        };
+        document.getElementById('btn-stopstick').onclick = () => { const name = idInput.value.trim().toUpperCase(); db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null }); };
     }
 </script>
 </body>
