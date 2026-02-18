@@ -72,10 +72,10 @@
     const secretKey = "TACTICAL-UNLOCK-2026";
     const lockScreen = document.getElementById('qr-lock-screen');
     const mainApp = document.getElementById('main-app');
-    let audioCtx = null;
-    function playBip() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain(); osc.type = "square"; osc.frequency.setValueAtTime(440, audioCtx.currentTime); gain.gain.setValueAtTime(0.1, audioCtx.currentTime); osc.connect(gain); gain.connect(audioCtx.destination); osc.start(); osc.stop(audioCtx.currentTime + 0.2); }
+
     function unlock() { localStorage.setItem('tactical_authorized', 'true'); lockScreen.style.display = 'none'; mainApp.style.display = 'flex'; initTacticalApp(); }
     if (localStorage.getItem('tactical_authorized') === 'true') { unlock(); } else { const html5QrCode = new Html5Qrcode("reader"); html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, (decodedText) => { if (decodedText.trim() === secretKey) { html5QrCode.stop().then(() => unlock()); } }).catch(() => console.log("Attente...")); }
+    
     var db;
     function initTacticalApp() {
         const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
@@ -88,23 +88,89 @@
         const bannerText = document.getElementById('banner-text');
         const ssChoices = document.getElementById('ss-choices');
         const appBody = document.getElementById('app-body');
+        
         idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
         idInput.oninput = () => localStorage.setItem('unit_name', idInput.value);
+        
         const map = L.map('map', { zoomControl: false }).setView([46, 2], 16);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, weight: 3 }).addTo(map);
-        let myPos = null, isPEC = false, isLeader = false, lastAlertSource = null, lastSSSource = null, lastBipTime = 0;
+        
+        let myPos = null, isPEC = false, isLeader = false, lastAlertSource = null, lastSSSource = null;
         const markers = {};
+        
         function getDistance(lat1, lon1, lat2, lon2) { const R = 6371e3; const φ1 = lat1 * Math.PI/180; const φ2 = lat2 * Math.PI/180; const a = Math.sin(((lat2-lat1)*Math.PI/180)/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(((lon2-lon1)*Math.PI/180)/2)**2; return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); }
-        function speak(text, times = 1) { if ('speechSynthesis' in window) { window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.lang = 'fr-FR'; utterance.rate = 1.1; for (let i = 0; i < times; i++) { window.speechSynthesis.speak(utterance); } } }
+        
+        // MODIFICATION : Répétition fixée à 2 fois
+        function speak(text, times = 2) { 
+            if ('speechSynthesis' in window) { 
+                window.speechSynthesis.cancel(); 
+                const utterance = new SpeechSynthesisUtterance(text); 
+                utterance.lang = 'fr-FR'; utterance.rate = 1.1; 
+                for (let i = 0; i < times; i++) { window.speechSynthesis.speak(utterance); } 
+            } 
+        }
+        
         window.submitSS = (res) => { db.ref('alerts/stopstick').update({ result: res, active: false, ts: Date.now() }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 5000); };
+        
         function sync(remove = false) { if (!myPos) return; const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if (remove) { db.ref('vehicles/' + safeId).remove(); } else { db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now() }); } }
+        
         navigator.geolocation.watchPosition((p) => { myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; myMarker.setLatLng([myPos.lat, myPos.lon]); map.setView([myPos.lat, myPos.lon], map.getZoom()); if (isPEC) sync(); }, null, { enableHighAccuracy: true });
+        
         btnPec.onclick = function() { const unitName = idInput.value.trim().toUpperCase(); isPEC = !isPEC; if (!isPEC) { if (isLeader) { db.ref('vehicles').remove(); db.ref('alerts').remove(); } else { sync(true); } isLeader = false; } else { if (!lastAlertSource) { isLeader = true; OneSignalDeferred.push(async function(OneSignal) { OneSignal.postNotification({ contents: { "fr": "L'unité " + unitName + " a démarré une interception !" }, headings: { "fr": "🚨 ALERTE PRISE EN CHARGE" } }); }); } sync(); } updateUI(); };
         btnClear.onclick = () => { if(confirm("Nettoyer Unités + Alertes ?")) { db.ref('vehicles').remove(); db.ref('alerts').remove(); location.reload(); } };
+        
         function updateUI() { btnPec.classList.toggle('active-leader', (isLeader && isPEC)); btnPec.innerText = isPEC ? (isLeader ? "🛑 STOP INTERCEPTION (GLOBAL)" : "🏃 QUITTER LE DISPOSITIF") : (lastAlertSource ? "📡 REJOINDRE DISPOSITIF" : "🚨 DÉMARRER PRISE EN CHARGE"); }
-        db.ref('alerts/stopstick').on('value', (s) => { const data = s.val(); if (!data) { banner.classList.remove('alert-active', 'alert-stopstick', 'ss-success', 'ss-fail'); ssChoices.style.display = "none"; return; } if (data.active) { bannerText.innerText = "🚧 ATTENTION : STOP STICK PAR " + data.user; banner.classList.add('alert-active', 'alert-stopstick'); if (data.user === idInput.value.trim().toUpperCase()) ssChoices.style.display = "flex"; if (lastSSSource !== data.ts) { speak("Attention, stop stick par " + data.user, 3); lastSSSource = data.ts; } } else if (data.result) { banner.classList.remove('alert-stopstick'); banner.classList.add(data.result === 'POSITIF' ? 'ss-success' : 'ss-fail'); bannerText.innerText = "🚧 STOP STICK : " + (data.result === 'POSITIF' ? 'RÉUSSITE' : 'ÉCHEC'); ssChoices.style.display = "none"; if (lastSSSource !== data.ts + "_res") { speak("Stop stick " + data.result, 3); lastSSSource = data.ts + "_res"; } setTimeout(() => { banner.classList.remove('ss-success', 'ss-fail'); if(!lastAlertSource && !isPEC) banner.classList.remove('alert-active'); }, 5000); } });
-        db.ref('vehicles').on('value', (snapshot) => { const data = snapshot.val() || {}; let currentAlert = null; let minDistance = Infinity; const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); for (let id in data) { const v = data[id]; if (v.active) currentAlert = id.replace(/_/g, ' '); if (id !== mySafeId) { if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map); markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71' }); if (myPos) { const d = getDistance(myPos.lat, myPos.lon, v.lat, v.lon); if (d < minDistance) minDistance = d; } } } for (let id in markers) if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } appBody.classList.remove('proximity-orange', 'proximity-red'); if (minDistance <= 200) { appBody.classList.add('proximity-red'); if(Date.now() - lastBipTime > 1000) { playBip(); lastBipTime = Date.now(); } } else if (minDistance <= 500) { appBody.classList.add('proximity-orange'); } if (currentAlert && !banner.classList.contains('alert-stopstick')) { bannerText.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase(); banner.classList.add('alert-active'); if (lastAlertSource !== currentAlert) { speak(currentAlert + " prend en charge", 3); lastAlertSource = currentAlert; } } else if (!currentAlert && !banner.classList.contains('alert-stopstick')) { banner.classList.remove('alert-active'); lastAlertSource = null; } updateUI(); });
+        
+        db.ref('alerts/stopstick').on('value', (s) => { 
+            const data = s.val(); 
+            if (!data) { banner.classList.remove('alert-active', 'alert-stopstick', 'ss-success', 'ss-fail'); ssChoices.style.display = "none"; return; } 
+            if (data.active) { 
+                bannerText.innerText = "🚧 ATTENTION : STOP STICK PAR " + data.user; 
+                banner.classList.add('alert-active', 'alert-stopstick'); 
+                if (data.user === idInput.value.trim().toUpperCase()) ssChoices.style.display = "flex"; 
+                if (lastSSSource !== data.ts) { speak("Attention, stop stick par " + data.user); lastSSSource = data.ts; } 
+            } else if (data.result) { 
+                banner.classList.remove('alert-stopstick'); 
+                banner.classList.add(data.result === 'POSITIF' ? 'ss-success' : 'ss-fail'); 
+                bannerText.innerText = "🚧 STOP STICK : " + (data.result === 'POSITIF' ? 'RÉUSSITE' : 'ÉCHEC'); 
+                ssChoices.style.display = "none"; 
+                if (lastSSSource !== data.ts + "_res") { speak("Stop stick " + data.result); lastSSSource = data.ts + "_res"; } 
+                setTimeout(() => { banner.classList.remove('ss-success', 'ss-fail'); if(!lastAlertSource && !isPEC) banner.classList.remove('alert-active'); }, 5000); 
+            } 
+        });
+        
+        db.ref('vehicles').on('value', (snapshot) => { 
+            const data = snapshot.val() || {}; 
+            let currentAlert = null; 
+            let minDistance = Infinity; 
+            const mySafeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); 
+            
+            for (let id in data) { 
+                const v = data[id]; 
+                if (v.active) currentAlert = id.replace(/_/g, ' '); 
+                if (id !== mySafeId) { 
+                    if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map); 
+                    markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71' }); 
+                    if (myPos) { const d = getDistance(myPos.lat, myPos.lon, v.lat, v.lon); if (d < minDistance) minDistance = d; } 
+                } 
+            } 
+            for (let id in markers) if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } 
+            
+            appBody.classList.remove('proximity-orange', 'proximity-red'); 
+            if (minDistance <= 200) { appBody.classList.add('proximity-red'); } 
+            else if (minDistance <= 500) { appBody.classList.add('proximity-orange'); } 
+            
+            if (currentAlert && !banner.classList.contains('alert-stopstick')) { 
+                bannerText.innerText = "🚨 ALERTE : PRISE EN CHARGE PAR " + currentAlert.toUpperCase(); 
+                banner.classList.add('alert-active'); 
+                if (lastAlertSource !== currentAlert) { speak(currentAlert + " prend en charge"); lastAlertSource = currentAlert; } 
+            } else if (!currentAlert && !banner.classList.contains('alert-stopstick')) { 
+                banner.classList.remove('alert-active'); lastAlertSource = null; 
+            } 
+            updateUI(); 
+        });
+        
         document.getElementById('btn-stopstick').onclick = () => { const name = idInput.value.trim().toUpperCase(); db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null }); };
     }
 </script>
