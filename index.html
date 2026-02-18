@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TACTICAL DEPLOY</title>
     
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      OneSignalDeferred.push(async function(OneSignal) {
+        await OneSignal.init({
+          appId: "3355715f-9856-4371-a3d2-8b1bd033b48c",
+        });
+      });
+    </script>
+
     <link rel="manifest" href="manifest.json">
     <script>
         if ('serviceWorker' in navigator) {
@@ -110,6 +120,7 @@
     }
 
     btnPec.onclick = function() {
+        const unitName = idInput.value.trim().toUpperCase();
         isPEC = !isPEC;
         if (!isPEC) {
             if (isLeader) {
@@ -120,7 +131,17 @@
             }
             isLeader = false;
         } else {
-            if (!lastAlertSource) isLeader = true;
+            if (!lastAlertSource) {
+                isLeader = true;
+                // Notification OneSignal v16
+                OneSignalDeferred.push(async function(OneSignal) {
+                    await OneSignal.Notifications.requestPermission();
+                    OneSignal.postNotification({
+                        contents: { "fr": "L'unité " + unitName + " a démarré une interception !" },
+                        headings: { "fr": "🚨 ALERTE PRISE EN CHARGE" }
+                    });
+                });
+            }
             sync();
         }
         updateUI();
@@ -209,6 +230,14 @@
     document.getElementById('btn-stopstick').onclick = function() {
         const name = idInput.value.trim().toUpperCase();
         db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null });
+        
+        // Notification OneSignal v16
+        OneSignalDeferred.push(async function(OneSignal) {
+            OneSignal.postNotification({
+                contents: { "fr": "Positionnement Stop Stick par " + name },
+                headings: { "fr": "🚧 ALERTE STOP STICK" }
+            });
+        });
     };
 
     window.submitSS = function(res) {
