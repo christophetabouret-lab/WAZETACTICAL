@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TACTICAL DEPLOY</title>
+    
+    <link rel="manifest" href="manifest.json">
+    
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -11,39 +14,54 @@
         await OneSignal.init({ appId: "3355715f-9856-4371-a3d2-8b1bd033b48c" });
       });
     </script>
+
     <script src="https://unpkg.com/html5-qrcode"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; box-sizing: border-box; }
+        
+        /* Alertes Proximité */
         .proximity-orange { border: 8px solid #e67e22 !important; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
+        
         #qr-lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         #reader { width: 85%; max-width: 400px; border: 2px solid #e74c3c; border-radius: 8px; background: #000; }
+
         #main-app { display: none; flex-direction: column; height: 100dvh; width: 100%; }
-        #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; }
+        
+        /* CENTRAGE STRICT 80% */
+        #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; box-sizing: border-box; }
+        #user-id { width: 80%; margin: 0 auto 12px auto; display: block; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; text-align: center; box-sizing: border-box; font-size: 1rem; }
+
         #map { flex-grow: 1; width: 100%; background: #222; }
-        #notification-banner { position: absolute; top: 75px; left: 50%; transform: translateX(-50%); width: 85%; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 1001; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        
+        #notification-banner { position: absolute; top: 75px; left: 50%; transform: translateX(-50%); width: 85%; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 1001; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); box-sizing: border-box; }
+        
         .alert-active { display: block !important; }
-        .alert-pec { background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; }
+        .alert-pec { background: #ff0000 !important; }
         .alert-stopstick { background: #8e44ad !important; }
         .end-success { background: #27ae60 !important; }
         .end-lost { background: #7f8c8d !important; }
+        
         .choice-box { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
         .btn-res { padding: 8px 15px; border: 2px solid white; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 0.7rem; }
-        #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; border-top: 2px solid #444; }
+        
+        #ui-panel { padding: 15px; background: #2c2c2c; z-index: 1000; border-top: 2px solid #444; flex-shrink: 0; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; color: white; text-transform: uppercase; font-size: 0.75rem; }
+        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; color: white; text-transform: uppercase; font-size: 0.75rem; cursor: pointer; }
         #btn-pec { background: #e67e22; grid-column: span 2; height: 55px; }
         .active-leader { background: #c0392b !important; border: 2px solid white; }
-        input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 12px; text-align: center; }
     </style>
 </head>
 <body id="app-body">
+
 <div id="qr-lock-screen">
-    <div style="color:#e74c3c; font-weight:bold; margin-bottom:15px;">🔐 IDENTIFICATION TACTIQUE</div>
+    <div style="color:#e74c3c; font-weight:bold; margin-bottom:15px; text-transform: uppercase;">🔐 IDENTIFICATION TACTIQUE</div>
     <div id="reader"></div>
 </div>
+
 <div id="main-app">
     <div id="main-title">TACTICAL DEPLOY</div>
     <div id="notification-banner">
@@ -67,17 +85,30 @@
         </div>
     </div>
 </div>
+
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
     const secretKey = "TACTICAL-UNLOCK-2026";
     const lockScreen = document.getElementById('qr-lock-screen');
     const mainApp = document.getElementById('main-app');
-    function unlock() { localStorage.setItem('tactical_authorized', 'true'); lockScreen.style.display = 'none'; mainApp.style.display = 'flex'; initTacticalApp(); }
-    if (localStorage.getItem('tactical_authorized') === 'true') { unlock(); } else { 
+
+    function unlock() { 
+        localStorage.setItem('tactical_authorized', 'true'); 
+        lockScreen.style.display = 'none'; 
+        mainApp.style.display = 'flex'; 
+        initTacticalApp(); 
+    }
+
+    if (localStorage.getItem('tactical_authorized') === 'true') { 
+        unlock(); 
+    } else { 
         const html5QrCode = new Html5Qrcode("reader"); 
-        html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => { if(txt.trim() === secretKey) { html5QrCode.stop().then(unlock); } });
+        html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => { 
+            if(txt.trim() === secretKey) { html5QrCode.stop().then(unlock); } 
+        });
     }
 
     var db;
@@ -100,9 +131,18 @@
         let myPos = null, isPEC = false, isLeader = false, lastAlertSource = null, lastSSSource = null, lastEndSource = null;
         const markers = {};
 
-        function speak(t) { if ('speechSynthesis' in window) { window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'fr-FR'; u.rate = 1.1; window.speechSynthesis.speak(u); window.speechSynthesis.speak(u); } }
+        function speak(t) { 
+            if ('speechSynthesis' in window) { 
+                window.speechSynthesis.cancel(); 
+                const u = new SpeechSynthesisUtterance(t); u.lang = 'fr-FR'; u.rate = 1.1; 
+                window.speechSynthesis.speak(u); window.speechSynthesis.speak(u); 
+            } 
+        }
 
-        window.submitSS = (res) => { db.ref('alerts/stopstick').update({ result: res, active: false, ts: Date.now() }); setTimeout(() => db.ref('alerts/stopstick').remove(), 5000); };
+        window.submitSS = (res) => { 
+            db.ref('alerts/stopstick').update({ result: res, active: false, ts: Date.now() }); 
+            setTimeout(() => db.ref('alerts/stopstick').remove(), 5000); 
+        };
         
         window.endInterception = (res) => { 
             db.ref('alerts/end').set({ result: res, user: idInput.value.toUpperCase(), ts: Date.now() }); 
@@ -142,7 +182,11 @@
             updateUI(); 
         };
 
-        document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer ?")) { db.ref('vehicles').remove(); db.ref('alerts').remove(); location.reload(); } };
+        document.getElementById('btn-clear').onclick = () => { 
+            if(confirm("Nettoyer Unités + Alertes ?")) { 
+                db.ref('vehicles').remove(); db.ref('alerts').remove(); location.reload(); 
+            } 
+        };
 
         function updateUI() { 
             const btn = document.getElementById('btn-pec'); 
@@ -178,6 +222,7 @@
                 bannerText.innerText = "🚧 STOP STICK : " + d.result; 
                 ssChoices.style.display = "none"; 
                 if (lastSSSource !== d.ts + "_res") { speak("Stop stick " + d.result); lastSSSource = d.ts + "_res"; } 
+                setTimeout(() => { if(!isPEC && !lastAlertSource) banner.style.display = 'none'; }, 5000);
             } 
         });
 
