@@ -101,7 +101,6 @@
         
         function getDistance(lat1, lon1, lat2, lon2) { const R = 6371e3; const φ1 = lat1 * Math.PI/180; const φ2 = lat2 * Math.PI/180; const a = Math.sin(((lat2-lat1)*Math.PI/180)/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(((lon2-lon1)*Math.PI/180)/2)**2; return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); }
         
-        // MODIFICATION : Répétition fixée à 2 fois
         function speak(text, times = 2) { 
             if ('speechSynthesis' in window) { 
                 window.speechSynthesis.cancel(); 
@@ -111,13 +110,43 @@
             } 
         }
         
-        window.submitSS = (res) => { db.ref('alerts/stopstick').update({ result: res, active: false, ts: Date.now() }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 5000); };
+        window.submitSS = (res) => { 
+            db.ref('alerts/stopstick').update({ result: res, active: false, ts: Date.now() }); 
+            setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 5000); 
+        };
         
-        function sync(remove = false) { if (!myPos) return; const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if (remove) { db.ref('vehicles/' + safeId).remove(); } else { db.ref('vehicles/' + safeId).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now() }); } }
+        function sync(remove = false, joining = false) { 
+            if (!myPos) return; 
+            const safeId = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); 
+            if (remove) { db.ref('vehicles/' + safeId).remove(); } 
+            else { 
+                db.ref('vehicles/' + safeId).set({ 
+                    lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now(), 
+                    joining: joining ? Date.now() : null 
+                }); 
+            } 
+        }
         
         navigator.geolocation.watchPosition((p) => { myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; myMarker.setLatLng([myPos.lat, myPos.lon]); map.setView([myPos.lat, myPos.lon], map.getZoom()); if (isPEC) sync(); }, null, { enableHighAccuracy: true });
         
-        btnPec.onclick = function() { const unitName = idInput.value.trim().toUpperCase(); isPEC = !isPEC; if (!isPEC) { if (isLeader) { db.ref('vehicles').remove(); db.ref('alerts').remove(); } else { sync(true); } isLeader = false; } else { if (!lastAlertSource) { isLeader = true; OneSignalDeferred.push(async function(OneSignal) { OneSignal.postNotification({ contents: { "fr": "L'unité " + unitName + " a démarré une interception !" }, headings: { "fr": "🚨 ALERTE PRISE EN CHARGE" } }); }); } sync(); } updateUI(); };
+        btnPec.onclick = function() { 
+            const unitName = idInput.value.trim().toUpperCase(); 
+            isPEC = !isPEC; 
+            if (!isPEC) { 
+                if (isLeader) { db.ref('vehicles').remove(); db.ref('alerts').remove(); } 
+                else { sync(true); } 
+                isLeader = false; 
+            } else { 
+                if (!lastAlertSource) { 
+                    isLeader = true; 
+                    sync();
+                } else {
+                    sync(false, true); 
+                }
+            } 
+            updateUI(); 
+        };
+        
         btnClear.onclick = () => { if(confirm("Nettoyer Unités + Alertes ?")) { db.ref('vehicles').remove(); db.ref('alerts').remove(); location.reload(); } };
         
         function updateUI() { btnPec.classList.toggle('active-leader', (isLeader && isPEC)); btnPec.innerText = isPEC ? (isLeader ? "🛑 STOP INTERCEPTION (GLOBAL)" : "🏃 QUITTER LE DISPOSITIF") : (lastAlertSource ? "📡 REJOINDRE DISPOSITIF" : "🚨 DÉMARRER PRISE EN CHARGE"); }
@@ -148,7 +177,14 @@
             
             for (let id in data) { 
                 const v = data[id]; 
-                if (v.active) currentAlert = id.replace(/_/g, ' '); 
+                const cleanId = id.replace(/_/g, ' ');
+                if (v.active) currentAlert = cleanId; 
+                
+                if (v.joining && v.joining > Date.now() - 5000 && id !== mySafeId && markers[id]?.lastJoin !== v.joining) {
+                    speak(cleanId + " rejoint le dispositif");
+                    if (markers[id]) markers[id].lastJoin = v.joining;
+                }
+
                 if (id !== mySafeId) { 
                     if (!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map); 
                     markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71' }); 
@@ -171,7 +207,10 @@
             updateUI(); 
         });
         
-        document.getElementById('btn-stopstick').onclick = () => { const name = idInput.value.trim().toUpperCase(); db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null }); };
+        document.getElementById('btn-stopstick').onclick = () => { 
+            const name = idInput.value.trim().toUpperCase(); 
+            db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null }); 
+        };
     }
 </script>
 </body>
