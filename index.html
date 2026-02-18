@@ -89,7 +89,6 @@
     const lockScreen = document.getElementById('qr-lock-screen');
     const mainApp = document.getElementById('main-app');
 
-    // Système de Bip
     let audioCtx = null;
     function playBip() {
         if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -123,7 +122,7 @@
                     html5QrCode.stop().then(() => unlock());
                 }
             }
-        ).catch(() => alert("Veuillez autoriser la caméra."));
+        ).catch(() => console.log("Attente autorisation caméra..."));
     }
 
     var db;
@@ -134,6 +133,7 @@
 
         const idInput = document.getElementById('user-id');
         const btnPec = document.getElementById('btn-pec');
+        const btnClear = document.getElementById('btn-clear');
         const banner = document.getElementById('notification-banner');
         const bannerText = document.getElementById('banner-text');
         const ssChoices = document.getElementById('ss-choices');
@@ -167,7 +167,6 @@
 
         window.submitSS = (res) => {
             db.ref('alerts/stopstick').update({ result: res, active: false });
-            ssChoices.style.display = "none";
         };
 
         function sync(remove = false) {
@@ -197,8 +196,7 @@
                     OneSignalDeferred.push(async function(OneSignal) {
                         OneSignal.postNotification({
                             contents: { "fr": "L'unité " + unitName + " a démarré une interception !" },
-                            headings: { "fr": "🚨 ALERTE PRISE EN CHARGE" },
-                            priority: 10, android_visibility: 1
+                            headings: { "fr": "🚨 ALERTE PRISE EN CHARGE" }
                         });
                     });
                 }
@@ -207,9 +205,14 @@
             updateUI();
         };
 
+        btnClear.onclick = () => {
+            if(confirm("Confirmer le nettoyage de toutes les unités sur la carte ?")) {
+                db.ref('vehicles').remove();
+            }
+        };
+
         function updateUI() {
-            btnPec.classList.remove('active-leader');
-            if (isLeader && isPEC) btnPec.classList.add('active-leader');
+            btnPec.classList.toggle('active-leader', (isLeader && isPEC));
             btnPec.innerText = isPEC ? (isLeader ? "🛑 STOP INTERCEPTION (GLOBAL)" : "🏃 QUITTER LE DISPOSITIF") : (lastAlertSource ? "📡 REJOINDRE DISPOSITIF" : "🚨 DÉMARRER PRISE EN CHARGE");
         }
 
@@ -272,7 +275,6 @@
             const name = idInput.value.trim().toUpperCase();
             db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null });
         };
-        document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer?")) db.ref('vehicles').remove(); };
     }
 </script>
 </body>
