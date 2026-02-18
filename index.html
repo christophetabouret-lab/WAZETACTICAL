@@ -13,7 +13,7 @@
       });
     </script>
 
-    <script src="https://rawgit.com/schmich/instascan-builds/master/instascan.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
 
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -26,34 +26,20 @@
         
         /* Écran de verrouillage QR */
         #qr-lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-        #preview { width: 80%; max-width: 400px; border: 2px solid #e74c3c; border-radius: 8px; margin-bottom: 20px; background: #000; }
+        #reader { width: 85%; max-width: 400px; border: 2px solid #e74c3c; border-radius: 8px; overflow: hidden; background: #000; }
 
-        /* Interface Principale */
         #main-app { display: none; flex-direction: column; height: 100dvh; width: 100%; }
         #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0; }
         #map { flex-grow: 1; width: 100%; background: #222; }
         
-        /* Correction Centrage Bannière */
         #notification-banner { 
-            position: absolute; 
-            top: 75px; 
-            left: 50%; 
-            transform: translateX(-50%); 
-            width: 85%; 
-            padding: 15px; 
-            border-radius: 8px; 
-            font-weight: bold; 
-            text-align: center; 
-            z-index: 1001; 
-            display: none; 
-            pointer-events: auto; 
-            font-size: 1.1rem; 
-            border: 2px solid white;
-            box-sizing: border-box; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            position: absolute; top: 75px; left: 50%; transform: translateX(-50%); width: 85%; 
+            padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 1001; 
+            display: none; pointer-events: auto; font-size: 1.1rem; border: 2px solid white;
+            box-sizing: border-box; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
 
-        .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; box-shadow: 0 0 20px #ff0000; }
+        .alert-active { display: block !important; background: #ff0000 !important; animation: pulse-red 0.5s infinite alternate; }
         .alert-stopstick { display: block !important; background: #8e44ad !important; }
         .ss-success { background: #2ecc71 !important; }
         .ss-fail { background: #e74c3c !important; }
@@ -64,16 +50,15 @@
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; text-transform: uppercase; font-size: 0.75rem; }
         #btn-pec { background: #e67e22; grid-column: span 2; height: 55px; font-size: 0.9rem; }
         .active-leader { background: #c0392b !important; border: 2px solid white; }
-        .active-join { background: #34495e !important; }
         input { width: 100%; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; margin-bottom: 12px; box-sizing: border-box; font-size: 1rem; text-align: center; }
     </style>
 </head>
 <body id="app-body">
 
 <div id="qr-lock-screen">
-    <div style="color:#e74c3c; font-weight:bold; margin-bottom:15px; text-transform:uppercase;">🔐 Identification Tactique</div>
-    <video id="preview"></video>
-    <p style="color:#888; font-size:0.8rem;">Scannez le QR Code pour déverrouiller l'unité</p>
+    <div style="color:#e74c3c; font-weight:bold; margin-bottom:15px; text-transform:uppercase;">🔐 Identification Requise</div>
+    <div id="reader"></div>
+    <p style="color:#888; font-size:0.8rem; margin-top:15px;">Scannez le QR Code de service pour activer l'unité</p>
 </div>
 
 <div id="main-app">
@@ -101,10 +86,10 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-    // --- SÉCURITÉ QR CODE ---
     const secretKey = "TACTICAL-UNLOCK-2026";
     const lockScreen = document.getElementById('qr-lock-screen');
     const mainApp = document.getElementById('main-app');
+    let html5QrCode;
 
     function unlock() {
         localStorage.setItem('tactical_authorized', 'true');
@@ -116,18 +101,25 @@
     if (localStorage.getItem('tactical_authorized') === 'true') {
         unlock();
     } else {
-        let scanner = new Instascan.Scanner({ video: document.getElementById('preview'), mirror: false });
-        scanner.addListener('scan', function (content) {
-            if (content === secretKey) { scanner.stop(); unlock(); }
-            else { alert("Clé QR invalide."); }
+        html5QrCode = new Html5Qrcode("reader");
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+        html5QrCode.start(
+            { facingMode: "environment" }, 
+            config,
+            (decodedText) => {
+                if (decodedText.trim() === secretKey) {
+                    html5QrCode.stop().then(() => unlock());
+                } else {
+                    alert("Clé invalide.");
+                }
+            }
+        ).catch(err => {
+            alert("Erreur Caméra : Assurez-vous d'être en HTTPS et d'autoriser l'accès.");
         });
-        Instascan.Camera.getCameras().then(function (cameras) {
-            if (cameras.length > 0) { scanner.start(cameras[cameras.length - 1]); }
-            else { alert('Caméra non détectée.'); }
-        }).catch(e => console.error(e));
     }
 
-    // --- LOGIQUE COMPLÈTE APPLICATION ---
+    // --- LOGIQUE TACTIQUE ---
     var db;
     function initTacticalApp() {
         const firebaseConfig = { databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" };
@@ -216,11 +208,7 @@
 
         db.ref('alerts/stopstick').on('value', (s) => {
             const data = s.val(); 
-            if (!data) {
-                banner.classList.remove('alert-active', 'alert-stopstick', 'ss-success', 'ss-fail');
-                ssChoices.style.display = "none";
-                return;
-            }
+            if (!data) { banner.classList.remove('alert-active', 'alert-stopstick', 'ss-success', 'ss-fail'); ssChoices.style.display = "none"; return; }
             if (data.active) {
                 bannerText.innerText = "🚧 ATTENTION : STOP STICK PAR " + data.user;
                 banner.classList.add('alert-active', 'alert-stopstick');
@@ -254,7 +242,6 @@
                 }
             }
             for (let id in markers) if (!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
-            
             appBody.classList.remove('proximity-orange', 'proximity-red');
             if (minDistance <= 200) appBody.classList.add('proximity-red');
             else if (minDistance <= 500) appBody.classList.add('proximity-orange');
@@ -269,19 +256,11 @@
             updateUI();
         });
 
-        document.getElementById('btn-stopstick').onclick = function() {
+        document.getElementById('btn-stopstick').onclick = () => {
             const name = idInput.value.trim().toUpperCase();
             db.ref('alerts/stopstick').set({ user: name, ts: Date.now(), active: true, result: null });
-            OneSignalDeferred.push(async function(OneSignal) {
-                OneSignal.postNotification({
-                    contents: { "fr": "Positionnement Stop Stick par " + name },
-                    headings: { "fr": "🚧 ALERTE STOP STICK" },
-                    priority: 10
-                });
-            });
         };
-
-        document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer base ?")) db.ref('vehicles').remove(); };
+        document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer?")) db.ref('vehicles').remove(); };
         window.submitSS = (res) => db.ref('alerts/stopstick').update({ result: res, active: false });
     }
 </script>
