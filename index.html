@@ -15,16 +15,18 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; box-sizing: border-box; }
         .proximity-orange { border: 8px solid #e67e22 !important; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
         #qr-lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         #reader { width: 85%; max-width: 400px; border: 2px solid #e74c3c; border-radius: 8px; background: #000; }
-        #main-app { display: none; flex-direction: column; height: 100dvh; width: 100%; }
+        #main-app { display: none; flex-direction: column; height: 100%; width: 100%; }
+        /* Titre centré, largeur 80% */
         #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; box-sizing: border-box; }
         #user-id { width: 80%; margin: 0 auto 12px auto; display: block; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; text-align: center; box-sizing: border-box; font-size: 1rem; }
-        #map { flex-grow: 1; width: 100%; background: #222; }
+        #map { flex: 1; width: 100%; background: #222; min-height: 200px; }
         .leaflet-tooltip-tactical { background: rgba(0,0,0,0.8); border: 1px solid #e74c3c; color: white; font-weight: bold; font-size: 10px; padding: 2px 4px; border-radius: 3px; text-transform: uppercase; }
         #notification-banner { position: absolute; top: 75px; left: 50%; transform: translateX(-50%); width: 85%; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 1001; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); box-sizing: border-box; color: white; }
         .alert-active { display: block !important; }
@@ -80,6 +82,16 @@
     const lockScreen = document.getElementById('qr-lock-screen');
     const mainApp = document.getElementById('main-app');
 
+    function speak(t) { 
+        if ('speechSynthesis' in window) { 
+            window.speechSynthesis.cancel(); 
+            const u = new SpeechSynthesisUtterance(t); 
+            u.lang = 'fr-FR'; 
+            u.rate = 1.1;
+            window.speechSynthesis.speak(u); 
+        } 
+    }
+
     let sillage = null;
     async function activerAntiVeille() {
         if ('wakeLock' in navigator) {
@@ -87,12 +99,10 @@
         }
     }
 
-    // --- MISE À JOUR UNLOCK (AUDIO) ---
     function unlock() { 
         localStorage.setItem('tactical_authorized', 'true'); 
         lockScreen.style.display = 'none'; 
         mainApp.style.display = 'flex'; 
-        // Réveille le moteur audio Android immédiatement
         speak("Système tactique connecté");
         activerAntiVeille();
         initTacticalApp(); 
@@ -112,7 +122,7 @@
                     } 
                 }
             ).catch(err => {
-                document.getElementById('qr-status').innerText = "Erreur: Caméra non détectée.";
+                document.getElementById('qr-status').innerText = "Erreur caméra.";
             });
         }, 1500);
     }
@@ -130,18 +140,6 @@
         idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
         idInput.oninput = () => localStorage.setItem('unit_name', idInput.value);
 
-        // --- MISE À JOUR SPEAK ---
-        function speak(t) { 
-            if ('speechSynthesis' in window) { 
-                window.speechSynthesis.cancel(); 
-                const u = new SpeechSynthesisUtterance(t); 
-                u.lang = 'fr-FR'; 
-                u.rate = 1.1;
-                window.speechSynthesis.speak(u); 
-            } 
-        }
-
-        // --- FONCTION RESET BANNIÈRE (ANTI-GHOSTING) ---
         function resetBanner() {
             banner.style.display = 'none';
             banner.className = ''; 
@@ -151,6 +149,10 @@
 
         const map = L.map('map', { zoomControl: false }).setView([46, 2], 16);
         L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
+        
+        // Correctif pour forcer l'affichage de la carte
+        setTimeout(() => { map.invalidateSize(); }, 500);
+
         const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, fillColor: '#3498db' }).addTo(map);
         myMarker.bindTooltip("", { permanent: true, direction: 'top', className: 'leaflet-tooltip-tactical', offset: [0, -10] });
         
@@ -169,13 +171,18 @@
         };
 
         function sync(rem = false, join = false) { if (!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if (rem) { db.ref('vehicles/' + sid).remove(); } else { db.ref('vehicles/' + sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now(), joining: join ? Date.now() : null }); } }
-        navigator.geolocation.watchPosition((p) => { myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; myMarker.setLatLng([myPos.lat, myPos.lon]); myMarker.setTooltipContent(idInput.value.substring(0, 3).toUpperCase()); map.setView([myPos.lat, myPos.lon], map.getZoom()); if (isPEC) sync(); }, null, { enableHighAccuracy: true });
+        navigator.geolocation.watchPosition((p) => { 
+            myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; 
+            myMarker.setLatLng([myPos.lat, myPos.lon]); 
+            myMarker.setTooltipContent(idInput.value.substring(0, 3).toUpperCase()); 
+            map.setView([myPos.lat, myPos.lon], map.getZoom()); 
+            if (isPEC) sync(); 
+        }, null, { enableHighAccuracy: true });
         
         document.getElementById('btn-pec').onclick = () => { if (isPEC && isLeader) { bannerText.innerText = "SÉLECTIONNER LE RÉSULTAT FINAL"; banner.className = 'alert-active alert-pec'; banner.style.display = 'block'; pecChoices.style.display = "flex"; return; } isPEC = !isPEC; if (!isPEC) { sync(true); isLeader = false; } else { if (!lastAlertSource) { isLeader = true; sync(); } else { sync(false, true); } } updateUI(); };
         document.getElementById('btn-clear').onclick = () => { if(confirm("Nettoyer ?")) { db.ref('vehicles').remove(); db.ref('alerts').remove(); location.reload(); } };
         function updateUI() { const btn = document.getElementById('btn-pec'); btn.classList.toggle('active-leader', (isLeader && isPEC)); btn.innerText = isPEC ? (isLeader ? "🛑 STOP" : "🏃 QUITTER") : (lastAlertSource ? "📡 REJOINDRE" : "🚨 DÉMARRER"); }
         
-        // --- LISTENERS MIS À JOUR (ANTI-GHOSTING) ---
         db.ref('alerts/end').on('value', (s) => { 
             const d = s.val(); 
             if (!d) { resetBanner(); return; }
