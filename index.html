@@ -78,11 +78,28 @@
     const secretKey = "TACTICAL-UNLOCK-2026";
     const lockScreen = document.getElementById('qr-lock-screen');
     const mainApp = document.getElementById('main-app');
-    function unlock() { localStorage.setItem('tactical_authorized', 'true'); lockScreen.style.display = 'none'; mainApp.style.display = 'flex'; initTacticalApp(); }
+
+    // AJOUT : Empêcher la veille pour garder les sons actifs
+    let sillage = null;
+    async function activerAntiVeille() {
+        if ('wakeLock' in navigator) {
+            try { sillage = await navigator.wakeLock.request('screen'); } catch (err) {}
+        }
+    }
+
+    function unlock() { 
+        localStorage.setItem('tactical_authorized', 'true'); 
+        lockScreen.style.display = 'none'; 
+        mainApp.style.display = 'flex'; 
+        activerAntiVeille();
+        initTacticalApp(); 
+    }
+
     if (localStorage.getItem('tactical_authorized') === 'true') { unlock(); } else { 
         const html5QrCode = new Html5Qrcode("reader"); 
         html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => { if(txt.trim() === secretKey) { html5QrCode.stop().then(unlock); } });
     }
+
     var db;
     function initTacticalApp() {
         firebase.initializeApp({ databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" });
@@ -94,8 +111,12 @@
         const pecChoices = document.getElementById('pec-choices');
         idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random() * 999);
         idInput.oninput = () => localStorage.setItem('unit_name', idInput.value);
+
         const map = L.map('map', { zoomControl: false }).setView([46, 2], 16);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        
+        // CORRECTION : Changement d'adresse pour éviter l'erreur 403 dans l'APK
+        L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
+
         const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, fillColor: '#3498db' }).addTo(map);
         myMarker.bindTooltip("", { permanent: true, direction: 'top', className: 'leaflet-tooltip-tactical', offset: [0, -10] });
         let myPos = null, isPEC = false, isLeader = false, lastAlertSource = null, lastSSSource = null, lastEndSource = null, stopStickActive = false;
@@ -110,7 +131,6 @@
             db.ref('alerts/end').set({ result: res, user: idInput.value.toUpperCase(), ts: Date.now() }); 
             db.ref('vehicles').remove(); 
             isPEC = false; isLeader = false; updateUI(); 
-            // NETTOYAGE FORCE
             setTimeout(() => { 
                 db.ref('alerts/end').remove(); 
                 banner.style.display = 'none'; 
@@ -136,7 +156,6 @@
             banner.style.display = 'block';
             pecChoices.style.display = "none"; 
             if (lastEndSource !== d.ts) { speak("Fin d'interception, " + d.result); lastEndSource = d.ts; } 
-            // AUTO-NETTOYAGE POUR TOUS
             setTimeout(() => { banner.style.display = 'none'; banner.className = ''; }, 5000);
         });
 
