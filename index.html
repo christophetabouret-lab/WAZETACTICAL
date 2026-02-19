@@ -78,25 +78,14 @@
         const map = L.map('map', { zoomControl: false }).setView([46, 2], 16); L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
         const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1 }).addTo(map);
 
-        // --- CORRECTION ZOOM : Recentrage auto sur le Leader après 10s ---
         const triggerRecenter = () => {
-            autoCenter = true;
-            recenterBtn.style.display = 'none';
+            autoCenter = true; recenterBtn.style.display = 'none';
             const target = (currentLeader && leaderPos) ? leaderPos : (myPos ? [myPos.lat, myPos.lon] : null);
-            if (target) {
-                isMapMoving = true;
-                map.setView(target, map.getZoom());
-                setTimeout(() => isMapMoving = false, 500);
-            }
+            if (target) { isMapMoving = true; map.setView(target, map.getZoom()); setTimeout(() => isMapMoving = false, 500); }
         };
 
-        map.on('movestart zoomstart', (e) => { 
-            if (!isMapMoving) { // On ne désactive QUE si c'est l'utilisateur qui bouge
-                autoCenter = false; 
-                recenterBtn.style.display = 'flex'; 
-                clearTimeout(recenterTimer);
-                recenterTimer = setTimeout(triggerRecenter, 10000); 
-            }
+        map.on('movestart zoomstart', () => { 
+            if (!isMapMoving) { autoCenter = false; recenterBtn.style.display = 'flex'; clearTimeout(recenterTimer); recenterTimer = setTimeout(triggerRecenter, 10000); }
         });
         
         recenterBtn.onclick = triggerRecenter;
@@ -104,11 +93,7 @@
         navigator.geolocation.watchPosition((p) => {
             myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
             myMarker.setLatLng([myPos.lat, myPos.lon]);
-            if (autoCenter && (!isPEC || isLeader)) {
-                isMapMoving = true;
-                map.setView([myPos.lat, myPos.lon], map.getZoom());
-                setTimeout(() => isMapMoving = false, 500);
-            }
+            if (autoCenter && (!isPEC || isLeader)) { isMapMoving = true; map.setView([myPos.lat, myPos.lon], map.getZoom()); setTimeout(() => isMapMoving = false, 500); }
             sync();
         }, null, { enableHighAccuracy: true });
 
@@ -116,35 +101,17 @@
         
         document.getElementById('btn-pec').onclick = () => { if(isPEC && isLeader) { bannerText.innerText = "SÉLECTIONNER LE RÉSULTAT FINAL"; banner.className = 'alert-active alert-pec'; banner.style.display='block'; document.getElementById('pec-choices').style.display='flex'; document.getElementById('ss-choices').style.display='none'; return; } isPEC = !isPEC; isLeader = (currentLeader === null && isPEC); updateUI(); sync(); };
         document.getElementById('btn-stopstick').onclick = () => { db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true }); };
-        
-        window.submitSS = (r) => { 
-            db.ref('alerts/stopstick').update({ result: r, active: false }); 
-            setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); 
-        };
-        
-        window.endInter = (r) => { 
-            db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); 
-            db.ref('vehicles').remove(); isPEC = false; isLeader = false; updateUI(); 
-            setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); 
-        };
+        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => db.ref('alerts/stopstick').remove(), 10000); };
+        window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); db.ref('vehicles').remove(); isPEC = false; isLeader = false; updateUI(); setTimeout(() => db.ref('alerts/end').remove(), 10000); };
 
         function updateUI() { const btn = document.getElementById('btn-pec'); if(isPEC) { btn.innerText = isLeader ? "🛑 STOP" : "🏃 QUITTER LA PRISE EN CHARGE"; btn.style.background = isLeader ? "#c0392b" : "#7f8c8d"; } else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } }
 
-        // --- CORRECTION BANNIERE STOP STICK : Effacement forcé ---
         db.ref('alerts/stopstick').on('value', (s) => {
-            const d = s.val(); 
-            if(!d) { 
-                banner.style.display = 'none';
-                banner.className = ''; 
-                return; 
-            }
+            const d = s.val(); if(!d) { banner.style.display = 'none'; banner.className = ''; return; }
             if(d.active) {
                 bannerText.innerText = "🚧 STOP STICK PAR : " + d.user; banner.className = 'alert-active alert-stopstick'; banner.style.display='block'; document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; if(lastAlerts.ss !== d.ts) { speak("Alerte Stop Stick"); lastAlerts.ss = d.ts; }
             } else if(d.result) {
-                bannerText.innerText = "RESULTAT STOP STICK : " + d.result; 
-                banner.className = 'alert-active ' + (d.result === 'POSITIF' ? 'ss-success' : 'ss-fail'); 
-                speak("Stop stick " + d.result); 
-                document.getElementById('ss-choices').style.display = 'none';
+                bannerText.innerText = "RESULTAT STOP STICK : " + d.result; banner.className = 'alert-active ' + (d.result === 'POSITIF' ? 'ss-success' : 'ss-fail'); speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none';
             }
         });
         
@@ -166,22 +133,19 @@
                     if(isPEC && v.isMission) { const d = map.distance([myPos.lat, myPos.lon], [v.lat, v.lon]); if(d < minD) minD = d; }
                 }
             }
-            
-            // Suivi Leader (avec flag anti-conflit)
-            if (autoCenter && isPEC && !isLeader && leaderPos) {
-                isMapMoving = true;
-                map.setView(leaderPos, map.getZoom());
-                setTimeout(() => isMapMoving = false, 500);
-            }
-            
+            if (autoCenter && isPEC && !isLeader && leaderPos) { isMapMoving = true; map.setView(leaderPos, map.getZoom()); setTimeout(() => isMapMoving = false, 500); }
             for(let id in markers) { if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
             document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
+            // --- LOGIQUE BANNIERE PRISE EN CHARGE (S'AFFICHE PARTOUT) ---
             const hasPriority = banner.classList.contains('alert-stopstick') || banner.classList.contains('ss-success') || banner.classList.contains('ss-fail') || banner.classList.contains('end-success') || banner.classList.contains('end-orange');
             if(currentLeader && !hasPriority) {
-                bannerText.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); banner.className = 'alert-active alert-pec'; banner.style.display='block';
+                bannerText.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); 
+                banner.className = 'alert-active alert-pec'; 
+                banner.style.display='block';
             } else if (!currentLeader && !hasPriority) {
-                banner.style.display = 'none'; lastAlerts.pec = null;
+                banner.style.display = 'none'; 
+                lastAlerts.pec = null;
             }
             updateUI();
         });
