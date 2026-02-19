@@ -23,7 +23,7 @@
         #qr-lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         #reader { width: 85%; max-width: 400px; border: 2px solid #e74c3c; border-radius: 8px; background: #000; }
         #main-app { display: none; flex-direction: column; height: 100%; width: 100%; }
-        /* Titre centré, largeur 80% */
+        /* Titre configuré selon tes préférences [cite: 2026-01-25] */
         #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; box-sizing: border-box; }
         #user-id { width: 80%; margin: 0 auto 12px auto; display: block; padding: 12px; background: #444; border: 1px solid #666; color: white; border-radius: 4px; text-align: center; box-sizing: border-box; font-size: 1rem; }
         #map { flex: 1; width: 100%; background: #222; min-height: 200px; }
@@ -82,15 +82,24 @@
     const lockScreen = document.getElementById('qr-lock-screen');
     const mainApp = document.getElementById('main-app');
 
+    // --- SYSTÈME VOCAL RÉPARÉ POUR APK ---
     function speak(t) { 
         if ('speechSynthesis' in window) { 
             window.speechSynthesis.cancel(); 
             const u = new SpeechSynthesisUtterance(t); 
             u.lang = 'fr-FR'; 
-            u.rate = 1.1;
+            u.rate = 1.0;
+            u.volume = 1.0;
+            u.pitch = 1.0;
+            // On force le chargement des voix pour Android
             window.speechSynthesis.speak(u); 
         } 
     }
+
+    // "Warm-up" pour réveiller le moteur TTS sur Android
+    window.addEventListener('click', function() {
+        speak(""); // Un message vide au premier clic débloque le canal audio
+    }, { once: true });
 
     let sillage = null;
     async function activerAntiVeille() {
@@ -103,9 +112,10 @@
         localStorage.setItem('tactical_authorized', 'true'); 
         lockScreen.style.display = 'none'; 
         mainApp.style.display = 'flex'; 
-        speak("Système tactique connecté");
         activerAntiVeille();
         initTacticalApp(); 
+        // Premier message pour confirmer le déverrouillage audio
+        setTimeout(() => speak("Système tactique connecté"), 500);
     }
 
     if (localStorage.getItem('tactical_authorized') === 'true') { 
@@ -150,7 +160,6 @@
         const map = L.map('map', { zoomControl: false }).setView([46, 2], 16);
         L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
         
-        // Correctif pour forcer l'affichage de la carte
         setTimeout(() => { map.invalidateSize(); }, 500);
 
         const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1, fillColor: '#3498db' }).addTo(map);
