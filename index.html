@@ -41,12 +41,12 @@
     <div id="notification-banner">
         <div id="banner-text"></div>
         <div id="ss-choices" class="choice-box" style="display:none;"><div class="btn-res" style="background:#2ecc71" onclick="submitSS('POSITIF')">POSITIF</div><div class="btn-res" style="background:#e74c3c" onclick="submitSS('NÉGATIF')">NÉGATIF</div></div>
-        <div id="pec-choices" class="choice-box" style="display:none;"><div class="btn-res" style="background:#27ae60" onclick="endInter('INTERPELLATION')">INTERP.</div><div class="btn-res" style="background:#e67e22" onclick="endInter('INDIVIDU EN FUITE')">FUITE</div><div class="btn-res" style="background:#7f8c8d" onclick="endInter('VL PERDU')">PERDU</div></div>
+        <div id="pec-choices" class="choice-box" style="display:none;"><div class="btn-res" style="background:#27ae60" onclick="endInter('INTERP.')">INTERP.</div><div class="btn-res" style="background:#e67e22" onclick="endInter('FUITE')">FUITE</div><div class="btn-res" style="background:#7f8c8d" onclick="endInter('PERDU')">PERDU</div></div>
     </div>
     <div id="map"></div>
     <div id="ui-panel">
         <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ" style="width: 80%; margin: 0 auto 10px auto; display: block; padding: 10px; text-align: center; background:#444; color:white; border:none; border-radius:4px;">
-        <div class="btn-grid"><button style="background:#444" onclick="if(confirm('Tout effacer ?')) { firebase.database().ref().remove(); location.reload(); }">🧹 NETTOYER</button><button style="background:#8e44ad" id="btn-stopstick">🚧 STOP STICK</button><button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button></div>
+        <div class="btn-grid"><button style="background:#444" onclick="if(confirm('Nettoyer ?')) { firebase.database().ref().remove(); location.reload(); }">🧹 NETTOYER</button><button style="background:#8e44ad" id="btn-stopstick">🚧 STOP STICK</button><button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button></div>
     </div>
 </div>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -73,40 +73,53 @@
         function sync() { if(!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if (isPEC) db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() }); else db.ref('vehicles/'+sid).remove(); }
         document.getElementById('btn-pec').onclick = () => { if(isPEC && isLeader) { bannerText.innerText = "SÉLECTIONNER LE RÉSULTAT FINAL"; banner.className = 'alert-active alert-pec'; banner.style.display='block'; document.getElementById('pec-choices').style.display='flex'; document.getElementById('ss-choices').style.display='none'; return; } isPEC = !isPEC; isLeader = (currentLeader === null && isPEC); updateUI(); sync(); };
         document.getElementById('btn-stopstick').onclick = () => { db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true }); };
-        
-        // CORRECTION 1 : Délai Stop Stick passé à 10 secondes (10000ms)
         window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); };
-        
-        window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); db.ref('vehicles').remove(); isPEC = false; isLeader = false; updateUI(); document.getElementById('pec-choices').style.display = 'none'; setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); };
+        window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); db.ref('vehicles').remove(); isPEC = false; isLeader = false; updateUI(); setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); };
         function updateUI() { const btn = document.getElementById('btn-pec'); if(isPEC) { btn.innerText = isLeader ? "🛑 STOP" : "🏃 QUITTER LA PRISE EN CHARGE"; btn.style.background = isLeader ? "#c0392b" : "#7f8c8d"; } else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } }
-        db.ref('alerts/stopstick').on('value', (s) => { const d = s.val(); if(!d) { if(!currentLeader) banner.style.display='none'; return; } if(d.active) { bannerText.innerText = "🚧 STOP STICK PAR : " + d.user; banner.className = 'alert-active alert-stopstick'; banner.style.display='block'; document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; if(lastAlerts.ss !== d.ts) { speak("Alerte Stop Stick"); lastAlerts.ss = d.ts; } } else if(d.result) { bannerText.innerText = "RESULTAT STOP STICK : " + d.result; banner.className = 'alert-active ss-success'; speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none'; } });
+        
+        // --- ECOUTEUR STOP STICK CORRIGÉ POUR LE NETTOYAGE ---
+        db.ref('alerts/stopstick').on('value', (s) => {
+            const d = s.val(); 
+            if(!d) { 
+                banner.style.display = 'none'; // On cache systématiquement si plus de données
+                banner.className = ''; 
+                return; 
+            }
+            if(d.active) {
+                bannerText.innerText = "🚧 STOP STICK PAR : " + d.user; banner.className = 'alert-active alert-stopstick'; banner.style.display='block'; document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; if(lastAlerts.ss !== d.ts) { speak("Alerte Stop Stick"); lastAlerts.ss = d.ts; }
+            } else if(d.result) {
+                bannerText.innerText = "RESULTAT STOP STICK : " + d.result; banner.className = 'alert-active ss-success'; speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none';
+            } 
+        });
         
         db.ref('alerts/end').on('value', (s) => {
-            const d = s.val(); 
-            if(!d) { banner.style.display='none'; banner.className=''; return; }
-            
-            // CORRECTION 2 : Reset forcé de l'état pour tout le groupe
-            isPEC = false; isLeader = false; updateUI();
-            
-            let cl = (d.result === 'INTERPELLATION') ? 'end-success' : (d.result === 'INDIVIDU EN FUITE' ? 'end-orange' : 'alert-pec');
-            bannerText.innerText = "🏁 FIN : " + d.result + " PAR " + d.user; 
-            banner.className = 'alert-active ' + cl; banner.style.display='block';
-            if(lastAlerts.end !== d.ts) { 
-                speak("Fin de prise en charge, " + d.result); 
-                lastAlerts.end = d.ts; 
-            }
+            const d = s.val(); if(!d) { banner.style.display='none'; banner.className=''; return; }
+            isPEC = false; isLeader = false; updateUI(); 
+            let cl = (d.result === 'INTERP.') ? 'end-success' : (d.result === 'FUITE' ? 'end-orange' : 'alert-pec');
+            bannerText.innerText = "🏁 FIN : " + d.result + " PAR " + d.user; banner.className = 'alert-active ' + cl; banner.style.display='block';
+            if(lastAlerts.end !== d.ts) { speak("Fin de prise en charge, " + d.result); lastAlerts.end = d.ts; }
         });
 
         db.ref('vehicles').on('value', (s) => {
             const data = s.val() || {}; let minD = Infinity; currentLeader = null; const mySid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
             for(let id in data) {
                 const v = data[id]; const name = id.replace(/_/g, ' '); if(v.active) { currentLeader = name; if(lastAlerts.pec !== currentLeader) { speak("Prise en charge par " + currentLeader); lastAlerts.pec = currentLeader; } }
-                if(id !== mySid) { if(!markers[id]) { markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindTooltip(name, { permanent: true, direction: 'top', className: 'leaflet-tooltip-tactical' }); } markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71', fillColor: v.active ? '#ff0000' : '#2ecc71' }); if(isPEC && v.isMission) { const d = map.distance([myPos.lat, myPos.lon], [v.lat, v.lon]); if(d < minD) minD = d; } }
+                if(id !== mySid) {
+                    if(!markers[id]) { markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindTooltip(name, { permanent: true, direction: 'top', className: 'leaflet-tooltip-tactical' }); }
+                    markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71', fillColor: v.active ? '#ff0000' : '#2ecc71' });
+                    if(isPEC && v.isMission) { const d = map.distance([myPos.lat, myPos.lon], [v.lat, v.lon]); if(d < minD) minD = d; }
+                }
             }
             for(let id in markers) { if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
             appBody.className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
-            if(currentLeader && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('end-success') && !banner.classList.contains('end-orange')) { bannerText.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); banner.className = 'alert-active alert-pec'; banner.style.display='block'; } 
-            else if (!currentLeader && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('end-success') && !banner.classList.contains('end-orange')) { banner.style.display = 'none'; lastAlerts.pec = null; }
+            
+            // On ne réaffiche le leader que si aucune alerte prioritaire (Stop Stick ou Fin) n'est en cours
+            const hasPriorityAlert = banner.classList.contains('alert-stopstick') || banner.classList.contains('ss-success') || banner.classList.contains('end-success') || banner.classList.contains('end-orange');
+            if(currentLeader && !hasPriorityAlert) {
+                bannerText.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); banner.className = 'alert-active alert-pec'; banner.style.display='block';
+            } else if (!currentLeader && !hasPriorityAlert) {
+                banner.style.display = 'none'; lastAlerts.pec = null;
+            }
             updateUI();
         });
     }
