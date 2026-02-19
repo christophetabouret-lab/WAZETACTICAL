@@ -181,7 +181,11 @@
             db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true });
         };
 
-        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => db.ref('alerts/stopstick').remove(), 3000); };
+        // --- MODIFICATION STOP STICK : EFFACEMENT AU BOUT DE 5 SECONDES ---
+        window.submitSS = (r) => { 
+            db.ref('alerts/stopstick').update({ result: r, active: false }); 
+            setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 5000); 
+        };
         
         window.endInter = (r) => { 
             db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); 
@@ -201,7 +205,6 @@
             }
         }
 
-        // ÉCOUTEUR STOP STICK
         db.ref('alerts/stopstick').on('value', (s) => {
             const d = s.val(); 
             if(!d) { if(!currentLeader) { banner.style.display='none'; banner.className=''; } return; }
@@ -215,11 +218,10 @@
                 bannerText.innerText = "RESULTAT STOP STICK : " + d.result;
                 banner.className = 'alert-active ss-success'; speak("Stop stick " + d.result);
                 document.getElementById('ss-choices').style.display = 'none';
-                setTimeout(() => { if(!currentLeader) banner.style.display='none'; }, 4000);
+                // La bannière se masquera automatiquement quand l'enregistrement sera supprimé par le submitSS après 5s
             }
         });
 
-        // ÉCOUTEUR FIN
         db.ref('alerts/end').on('value', (s) => {
             const d = s.val(); 
             if(!d) { banner.style.display='none'; banner.className=''; return; }
@@ -231,7 +233,6 @@
             setTimeout(() => { db.ref('alerts/end').remove(); }, 5000);
         });
 
-        // ÉCOUTEUR VÉHICULES (GÈRE LA VOIX PRISE EN CHARGE)
         db.ref('vehicles').on('value', (s) => {
             const data = s.val() || {}; 
             let minD = Infinity; 
@@ -242,7 +243,6 @@
                 const name = id.replace(/_/g, ' ');
                 if(data[id].active) {
                     currentLeader = name;
-                    // --- CORRECTION VOIX : Déclenchement pour TOUT LE MONDE ---
                     if(lastAlerts.pec !== currentLeader) {
                         speak(currentLeader + " prend en charge");
                         lastAlerts.pec = currentLeader;
@@ -256,13 +256,12 @@
 
             appBody.className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
-            // --- CORRECTION TEXTE BANNIÈRE ---
             if(currentLeader && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('end-success') && !banner.classList.contains('end-orange')) {
                 bannerText.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); 
                 banner.className = 'alert-active alert-pec'; banner.style.display='block';
             } else if (!currentLeader && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('end-success') && !banner.classList.contains('end-orange')) {
                 banner.style.display = 'none';
-                lastAlerts.pec = null; // Reset pour la prochaine alerte
+                lastAlerts.pec = null;
             }
             updateUI();
         });
