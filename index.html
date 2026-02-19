@@ -15,19 +15,23 @@
         
         #main-title { width: 80%; margin: calc(var(--safe-top) + 5px) auto 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; }
         #map { flex: 1; width: 100%; background: #222; position: relative; }
-        
-        #recenter-btn { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: rgba(52, 152, 219, 0.9); color: white; border: 2px solid white; border-radius: 50%; width: 50px; height: 50px; font-size: 22px; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.6); cursor: pointer; }
+        #recenter-btn { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: rgba(52, 152, 219, 0.9); color: white; border: 2px solid white; border-radius: 50%; width: 55px; height: 55px; font-size: 24px; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.6); cursor: pointer; }
         
         .leaflet-tooltip-tactical { background: rgba(0,0,0,0.8); border: 1px solid #e74c3c; color: white; font-weight: bold; font-size: 10px; padding: 2px 4px; border-radius: 3px; text-transform: uppercase; }
+        
+        /* BANNIÈRES UNIQUES PAR TYPE */
         #notification-banner { position: absolute; top: 140px; left: 50%; transform: translateX(-50%); width: 90%; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 2000; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         .alert-active { display: block !important; }
-        .alert-pec { background: #ff0000 !important; }
-        .alert-stopstick { background: #8e44ad !important; }
+        .alert-pec-ongoing { background: #ff0000 !important; } /* En cours */
+        .alert-stopstick-ongoing { background: #8e44ad !important; } /* Stopstick en cours */
+        
+        /* Résultats (Priorité 1) */
         .ss-success { background: #2ecc71 !important; } 
         .ss-fail { background: #e74c3c !important; } 
-        .end-success { background: #27ae60 !important; }
-        .end-orange { background: #e67e22 !important; }
-        
+        .end-success { background: #27ae60 !important; } /* INTERP */
+        .end-orange { background: #e67e22 !important; } /* FUITE */
+        .end-fail { background: #7f8c8d !important; }   /* PERDU */
+
         #ui-panel { padding: 15px 15px calc(var(--safe-bottom) + 10px) 15px; background: #2c2c2c; border-top: 2px solid #444; flex-shrink: 0; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; color: white; text-transform: uppercase; cursor: pointer; font-size: 0.7rem; }
@@ -52,7 +56,7 @@
     <div id="map"><div id="recenter-btn">🎯</div></div>
     <div id="ui-panel">
         <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ" style="width: 80%; margin: 0 auto 10px auto; display: block; padding: 10px; text-align: center; background:#444; color:white; border:none; border-radius:4px;">
-        <div class="btn-grid"><button style="background:#444" onclick="if(confirm('Tout effacer ?')) { firebase.database().ref().remove(); location.reload(); }">🧹 NETTOYER</button><button style="background:#8e44ad" id="btn-stopstick">🚧 STOP STICK</button><button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button></div>
+        <div class="btn-grid"><button style="background:#444" onclick="if(confirm('Nettoyer ?')) { firebase.database().ref().remove(); location.reload(); }">🧹 NETTOYER</button><button style="background:#8e44ad" id="btn-stopstick">🚧 STOP STICK</button><button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button></div>
     </div>
 </div>
 
@@ -78,16 +82,8 @@
         const map = L.map('map', { zoomControl: false }).setView([46, 2], 16); L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
         const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1 }).addTo(map);
 
-        const triggerRecenter = () => {
-            autoCenter = true; recenterBtn.style.display = 'none';
-            const target = (currentLeader && leaderPos) ? leaderPos : (myPos ? [myPos.lat, myPos.lon] : null);
-            if (target) { isMapMoving = true; map.setView(target, map.getZoom()); setTimeout(() => isMapMoving = false, 500); }
-        };
-
-        map.on('movestart zoomstart', () => { 
-            if (!isMapMoving) { autoCenter = false; recenterBtn.style.display = 'flex'; clearTimeout(recenterTimer); recenterTimer = setTimeout(triggerRecenter, 10000); }
-        });
-        
+        const triggerRecenter = () => { autoCenter = true; recenterBtn.style.display = 'none'; const target = (currentLeader && leaderPos) ? leaderPos : (myPos ? [myPos.lat, myPos.lon] : null); if (target) { isMapMoving = true; map.setView(target, map.getZoom()); setTimeout(() => isMapMoving = false, 500); } };
+        map.on('movestart zoomstart', () => { if (!isMapMoving) { autoCenter = false; recenterBtn.style.display = 'flex'; clearTimeout(recenterTimer); recenterTimer = setTimeout(triggerRecenter, 10000); } });
         recenterBtn.onclick = triggerRecenter;
         
         navigator.geolocation.watchPosition((p) => {
@@ -99,32 +95,54 @@
 
         function sync() { if(!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if (isPEC) db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() }); else db.ref('vehicles/'+sid).remove(); }
         
-        document.getElementById('btn-pec').onclick = () => { if(isPEC && isLeader) { bannerText.innerText = "SÉLECTIONNER LE RÉSULTAT FINAL"; banner.className = 'alert-active alert-pec'; banner.style.display='block'; document.getElementById('pec-choices').style.display='flex'; document.getElementById('ss-choices').style.display='none'; return; } isPEC = !isPEC; isLeader = (currentLeader === null && isPEC); updateUI(); sync(); };
+        document.getElementById('btn-pec').onclick = () => { if(isPEC && isLeader) { bannerText.innerText = "RÉSULTAT DE LA PRISE EN CHARGE"; banner.className = 'alert-active alert-pec-ongoing'; banner.style.display='block'; document.getElementById('pec-choices').style.display='flex'; document.getElementById('ss-choices').style.display='none'; return; } isPEC = !isPEC; isLeader = (currentLeader === null && isPEC); updateUI(); sync(); };
         document.getElementById('btn-stopstick').onclick = () => { db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true }); };
-        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => db.ref('alerts/stopstick').remove(), 10000); };
-        window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); db.ref('vehicles').remove(); isPEC = false; isLeader = false; updateUI(); setTimeout(() => db.ref('alerts/end').remove(), 10000); };
+        
+        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); };
+        window.endInter = (r) => { 
+            db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); 
+            db.ref('vehicles').remove(); isPEC = false; isLeader = false; updateUI();
+            document.getElementById('pec-choices').style.display = 'none';
+            setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); 
+        };
 
-        function updateUI() { const btn = document.getElementById('btn-pec'); if(isPEC) { btn.innerText = isLeader ? "🛑 STOP" : "🏃 QUITTER LA PRISE EN CHARGE"; btn.style.background = isLeader ? "#c0392b" : "#7f8c8d"; } else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } }
+        function updateUI() { const btn = document.getElementById('btn-pec'); if(isPEC) { btn.innerText = isLeader ? "🛑 STOP MISSION" : "🏃 QUITTER LA MISSION"; btn.style.background = isLeader ? "#c0392b" : "#7f8c8d"; } else { btn.innerText = currentLeader ? "📡 REJOINDRE LA MISSION" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } }
 
+        // --- ECOUTEUR STOP STICK ---
         db.ref('alerts/stopstick').on('value', (s) => {
-            const d = s.val(); if(!d) { banner.style.display = 'none'; banner.className = ''; return; }
+            const d = s.val(); if(!d) { return; } 
             if(d.active) {
-                bannerText.innerText = "🚧 STOP STICK PAR : " + d.user; banner.className = 'alert-active alert-stopstick'; banner.style.display='block'; document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; if(lastAlerts.ss !== d.ts) { speak("Alerte Stop Stick"); lastAlerts.ss = d.ts; }
+                bannerText.innerText = "🚧 STOP STICK PAR : " + d.user; banner.className = 'alert-active alert-stopstick-ongoing'; banner.style.display='block';
+                document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none';
+                if(lastAlerts.ss !== d.ts) { speak("Alerte Stop Stick"); lastAlerts.ss = d.ts; }
             } else if(d.result) {
-                bannerText.innerText = "RESULTAT STOP STICK : " + d.result; banner.className = 'alert-active ' + (d.result === 'POSITIF' ? 'ss-success' : 'ss-fail'); speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none';
+                bannerText.innerText = "RESULTAT STOP STICK : " + d.result; banner.className = 'alert-active ' + (d.result === 'POSITIF' ? 'ss-success' : 'ss-fail'); 
+                speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none';
             }
         });
         
+        // --- ECOUTEUR FIN (PRIORITÉ SUPRÊME) ---
         db.ref('alerts/end').on('value', (s) => {
-            const d = s.val(); if(!d) { banner.style.display='none'; banner.className=''; return; }
+            const d = s.val(); 
+            if(!d) { banner.style.display='none'; banner.className=''; return; }
+            
             isPEC = false; isLeader = false; updateUI(); 
-            let cl = (d.result === 'INTERPELLATION') ? 'end-success' : (d.result === 'INDIVIDU EN FUITE' ? 'end-orange' : 'alert-pec');
-            bannerText.innerText = "🏁 FIN : " + d.result + " PAR " + d.user; banner.className = 'alert-active ' + cl; banner.style.display='block';
-            if(lastAlerts.end !== d.ts) { speak("FIN DE PRISE EN CHARGE " + d.result); lastAlerts.end = d.ts; }
+            let cl = (d.result === 'INTERPELLATION') ? 'end-success' : (d.result === 'INDIVIDU EN FUITE' ? 'end-orange' : 'end-fail');
+            bannerText.innerText = "🏁 FIN : " + d.result + "\nPAR " + d.user; 
+            banner.className = 'alert-active ' + cl; banner.style.display='block';
+            
+            if(lastAlerts.end !== d.ts) { 
+                speak("FIN DE PRISE EN CHARGE " + d.result); 
+                lastAlerts.end = d.ts; 
+            }
         });
 
+        // --- ECOUTEUR VÉHICULES (Bannière Mission) ---
         db.ref('vehicles').on('value', (s) => {
             const data = s.val() || {}; let minD = Infinity; leaderPos = null; currentLeader = null; const mySid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
+            
+            if (Object.keys(data).length === 0 && (isPEC || currentLeader)) { isPEC = false; isLeader = false; updateUI(); }
+
             for(let id in data) {
                 const v = data[id]; const name = id.replace(/_/g, ' '); if(v.active) { currentLeader = name; leaderPos = [v.lat, v.lon]; if(lastAlerts.pec !== currentLeader) { speak("Prise en charge par " + currentLeader); lastAlerts.pec = currentLeader; } }
                 if(id !== mySid) {
@@ -137,15 +155,18 @@
             for(let id in markers) { if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
             document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
-            // --- LOGIQUE BANNIERE PRISE EN CHARGE (S'AFFICHE PARTOUT) ---
-            const hasPriority = banner.classList.contains('alert-stopstick') || banner.classList.contains('ss-success') || banner.classList.contains('ss-fail') || banner.classList.contains('end-success') || banner.classList.contains('end-orange');
-            if(currentLeader && !hasPriority) {
-                bannerText.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); 
-                banner.className = 'alert-active alert-pec'; 
-                banner.style.display='block';
-            } else if (!currentLeader && !hasPriority) {
-                banner.style.display = 'none'; 
-                lastAlerts.pec = null;
+            // LOGIQUE DE BLOCAGE : On n'affiche le nom du leader que si aucun résultat (Fin ou SS) n'est affiché
+            const isPriorityShowing = banner.classList.contains('end-success') || banner.classList.contains('end-orange') || banner.classList.contains('end-fail') || banner.classList.contains('ss-success') || banner.classList.contains('ss-fail');
+            
+            if (!isPriorityShowing) {
+                if(currentLeader) {
+                    bannerText.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); 
+                    banner.className = 'alert-active alert-pec-ongoing'; 
+                    banner.style.display='block';
+                } else if (!banner.classList.contains('alert-stopstick-ongoing')) {
+                    banner.style.display = 'none'; 
+                    lastAlerts.pec = null;
+                }
             }
             updateUI();
         });
