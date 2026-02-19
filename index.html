@@ -2,38 +2,72 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>TACTICAL DEPLOY</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        html, body { height: 100%; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; }
-        #main-title { width: 80%; margin: 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; }
+        :root { --safe-top: env(safe-area-inset-top, 25px); --safe-bottom: env(safe-area-inset-bottom, 30px); }
+        html, body { height: 100%; margin: 0; padding: 0; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; }
+        
+        /* Bordures de proximité [cite: 2021-01-21] */
+        .proximity-orange { border: 8px solid #e67e22 !important; box-sizing: border-box; }
+        .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; box-sizing: border-box; }
+        @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
+
+        /* Titre 80% sous l'heure [cite: 2026-01-25] */
+        #main-title { width: 80%; margin: calc(var(--safe-top) + 5px) auto 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; }
+        
         #map { flex: 1; width: 100%; background: #222; }
-        #ui-panel { padding: 15px; background: #2c2c2c; border-top: 2px solid #444; }
+        
+        /* Bannières d'alertes [cite: 2026-01-24] */
+        #notification-banner { position: absolute; top: 130px; left: 50%; transform: translateX(-50%); width: 85%; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 1001; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .alert-active { display: block !important; }
+        .alert-pec { background: #ff0000 !important; }
+        .alert-stopstick { background: #8e44ad !important; }
+        .ss-success { background: #2ecc71 !important; }
+        .end-success { background: #27ae60 !important; }
+
+        #ui-panel { padding: 15px 15px calc(var(--safe-bottom) + 5px) 15px; background: #2c2c2c; border-top: 2px solid #444; flex-shrink: 0; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; color: white; text-transform: uppercase; cursor: pointer; }
+        button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; color: white; text-transform: uppercase; cursor: pointer; font-size: 0.7rem; }
+        #btn-pec { background: #e67e22; grid-column: span 2; min-height: 55px; }
+        .choice-box { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+        .btn-res { padding: 8px 12px; border: 1px solid white; border-radius: 4px; font-size: 0.6rem; }
+        
         #qr-lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     </style>
 </head>
-<body>
+<body id="app-body">
 
 <div id="qr-lock-screen">
-    <div style="color:#e74c3c; font-weight:bold; margin-bottom:15px; text-transform: uppercase;">🔐 IDENTIFICATION TACTIQUE</div>
+    <div style="color:#e74c3c; font-weight:bold; margin-bottom:15px;">🔐 IDENTIFICATION TACTIQUE</div>
     <div id="reader" style="width: 85%; max-width: 400px;"></div>
-    <div id="qr-status" style="margin-top:10px; font-size:12px; color:#888;">Initialisation système...</div>
 </div>
 
 <div id="main-app" style="display:none; flex-direction: column; height: 100vh;">
     <div id="main-title">TACTICAL DEPLOY</div>
+    
+    <div id="notification-banner">
+        <div id="banner-text"></div>
+        <div id="ss-choices" class="choice-box" style="display:none;">
+            <div class="btn-res" style="background:#2ecc71" onclick="submitSS('POSITIF')">POSITIF</div>
+            <div class="btn-res" style="background:#e74c3c" onclick="submitSS('NÉGATIF')">NÉGATIF</div>
+        </div>
+        <div id="pec-choices" class="choice-box" style="display:none;">
+            <div class="btn-res" style="background:#27ae60" onclick="endInter('INTERPELLATION')">INTERPELLATION</div>
+            <div class="btn-res" style="background:#7f8c8d" onclick="endInter('VL PERDU')">VL PERDU</div>
+        </div>
+    </div>
+
     <div id="map"></div>
+
     <div id="ui-panel">
-        <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ" style="width: 80%; margin: 0 auto 10px auto; display: block; padding: 10px; text-align: center; background:#444; color:white; border:1px solid #666;">
+        <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ" style="width: 80%; margin: 0 auto 10px auto; display: block; padding: 10px; text-align: center; background:#444; color:white; border:none; border-radius:4px;">
         <div class="btn-grid">
             <button style="background:#444" onclick="location.reload()">🧹 NETTOYER</button>
-            <button style="background:#8e44ad">🚧 STOP STICK</button>
-            <button id="btn-pec" style="background:#e67e22; grid-column: span 2;">🚨 DÉMARRER</button>
+            <button style="background:#8e44ad" id="btn-stopstick">🚧 STOP STICK</button>
+            <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
         </div>
     </div>
 </div>
@@ -43,60 +77,126 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
     const secretKey = "TACTICAL-UNLOCK-2026";
-    const lockScreen = document.getElementById('qr-lock-screen');
-    const mainApp = document.getElementById('main-app');
+    let myPos = null, isPEC = false, isLeader = false, lastAlerts = { ss:0, pec:null, end:0 };
 
     function speak(t) { 
         if (window.AndroidVocal) { window.AndroidVocal.speakNative(t); } 
         else if ('speechSynthesis' in window) {
             window.speechSynthesis.cancel();
-            const u = new SpeechSynthesisUtterance(t);
-            u.lang = 'fr-FR';
+            const u = new SpeechSynthesisUtterance(t); u.lang = 'fr-FR';
             window.speechSynthesis.speak(u);
         }
     }
 
     function unlock() { 
-        localStorage.setItem('tactical_authorized', 'true'); // On enregistre l'accès [cite: 2026-01-24]
-        lockScreen.style.display = 'none'; 
-        mainApp.style.display = 'flex'; 
-        speak("Système tactique connecté");
+        localStorage.setItem('tactical_authorized', 'true');
+        document.getElementById('qr-lock-screen').style.display = 'none'; 
+        document.getElementById('main-app').style.display = 'flex'; 
         initApp();
     }
 
-    // On vérifie si déjà déverrouillé avant de lancer le scanner
-    if (localStorage.getItem('tactical_authorized') === 'true') {
-        unlock();
-    } else {
-        // Délai pour laisser le temps au téléphone d'activer la caméra
+    if (localStorage.getItem('tactical_authorized') === 'true') { unlock(); }
+    else {
+        const html5QrCode = new Html5Qrcode("reader");
         setTimeout(() => {
-            const html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start(
-                { facingMode: "environment" }, 
-                { fps: 10, qrbox: 250 }, 
-                (txt) => {
-                    if(txt.trim() === secretKey) { 
-                        html5QrCode.stop().then(unlock).catch(unlock); 
-                    }
-                }
-            ).catch(err => {
-                document.getElementById('qr-status').innerText = "Erreur caméra : Vérifiez les permissions.";
+            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => {
+                if(txt.trim() === secretKey) { html5QrCode.stop().then(unlock); }
             });
         }, 1500);
     }
 
     function initApp() {
         firebase.initializeApp({ databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" });
+        const db = firebase.database();
+        const banner = document.getElementById('notification-banner');
+        const bannerText = document.getElementById('banner-text');
+        const idInput = document.getElementById('user-id');
+        
+        idInput.value = localStorage.getItem('unit_name') || "Unite-" + Math.floor(Math.random()*999);
+        idInput.oninput = () => localStorage.setItem('unit_name', idInput.value);
+
         const map = L.map('map', { zoomControl: false }).setView([46, 2], 16);
         L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
-        setTimeout(() => { map.invalidateSize(); }, 800);
+        setTimeout(() => map.invalidateSize(), 800);
+
+        const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1 }).addTo(map);
         
-        const marker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1 }).addTo(map);
         navigator.geolocation.watchPosition((p) => {
-            const pos = [p.coords.latitude, p.coords.longitude];
-            marker.setLatLng(pos);
-            map.setView(pos, map.getZoom());
+            myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
+            myMarker.setLatLng([myPos.lat, myPos.lon]);
+            map.setView([myPos.lat, myPos.lon], map.getZoom());
+            if(isPEC) sync();
         }, null, { enableHighAccuracy: true });
+
+        function sync(rem=false) {
+            const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
+            if(rem) db.ref('vehicles/'+sid).remove();
+            else db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now() });
+        }
+
+        // --- ACTIONS BOUTONS ---
+        document.getElementById('btn-pec').onclick = () => {
+            if(isPEC && isLeader) {
+                bannerText.innerText = "RÉSULTAT DE L'INTERCEPTION";
+                banner.className = 'alert-active alert-pec'; banner.style.display='block';
+                document.getElementById('pec-choices').style.display='flex';
+                return;
+            }
+            isPEC = !isPEC; isLeader = isPEC; 
+            updateUI(); sync(!isPEC);
+            if(isPEC) speak("Démarrage prise en charge");
+        };
+
+        document.getElementById('btn-stopstick').onclick = () => {
+            db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true });
+        };
+
+        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => db.ref('alerts/stopstick').remove(), 3000); };
+        window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value, ts: Date.now() }); db.ref('vehicles').remove(); isPEC=false; isLeader=false; updateUI(); };
+
+        function updateUI() {
+            const btn = document.getElementById('btn-pec');
+            btn.innerText = isPEC ? (isLeader ? "🛑 STOP" : "🏃 QUITTER") : "🚨 DÉMARRER PRISE EN CHARGE";
+            btn.style.background = isLeader ? "#c0392b" : "#e67e22";
+        }
+
+        // --- LE MOTEUR D'ALERTES (FIREBASE) ---
+        db.ref('alerts/stopstick').on('value', (s) => {
+            const d = s.val(); if(!d) { banner.style.display='none'; return; }
+            if(d.active) {
+                bannerText.innerText = "🚧 STOP STICK : " + d.user;
+                banner.className = 'alert-active alert-stopstick'; banner.style.display='block';
+                document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none';
+                if(lastAlerts.ss !== d.ts) { speak("Alerte Stop Stick"); lastAlerts.ss = d.ts; }
+            } else if(d.result) {
+                bannerText.innerText = "RESULTAT STOP STICK : " + d.result;
+                banner.className = 'alert-active ss-success'; speak("Stop stick " + d.result);
+                setTimeout(() => banner.style.display='none', 4000);
+            }
+        });
+
+        db.ref('alerts/end').on('value', (s) => {
+            const d = s.val(); if(!d) return;
+            bannerText.innerText = "🏁 FIN : " + d.result; banner.className = 'alert-active end-success'; banner.style.display='block';
+            if(lastAlerts.end !== d.ts) { speak("Fin d'interception, " + d.result); lastAlerts.end = d.ts; }
+            setTimeout(() => { banner.style.display='none'; db.ref('alerts/end').remove(); }, 5000);
+        });
+
+        db.ref('vehicles').on('value', (s) => {
+            const data = s.val() || {}; let minD = Infinity; let leader = null;
+            for(let id in data) {
+                if(data[id].active) leader = id.replace(/_/g, ' ');
+                if(myPos && id !== idInput.value.replace(/ /g, '_')) {
+                    const d = map.distance([myPos.lat, myPos.lon], [data[id].lat, data[id].lon]);
+                    if(d < minD) minD = d;
+                }
+            }
+            document.getElementById('app-body').className = minD < 200 ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
+            if(leader && leader !== idInput.value.toUpperCase() && !isPEC) {
+                bannerText.innerText = "🚨 PEC EN COURS : " + leader; banner.className = 'alert-active alert-pec'; banner.style.display='block';
+                if(lastAlerts.pec !== leader) { speak(leader + " prend en charge"); lastAlerts.pec = leader; }
+            }
+        });
     }
 </script>
 </body>
