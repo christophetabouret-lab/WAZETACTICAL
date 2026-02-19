@@ -73,24 +73,26 @@
         function sync() { if(!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if (isPEC) db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() }); else db.ref('vehicles/'+sid).remove(); }
         document.getElementById('btn-pec').onclick = () => { if(isPEC && isLeader) { bannerText.innerText = "SÉLECTIONNER LE RÉSULTAT FINAL"; banner.className = 'alert-active alert-pec'; banner.style.display='block'; document.getElementById('pec-choices').style.display='flex'; document.getElementById('ss-choices').style.display='none'; return; } isPEC = !isPEC; isLeader = (currentLeader === null && isPEC); updateUI(); sync(); };
         document.getElementById('btn-stopstick').onclick = () => { db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true }); };
-        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 5000); };
+        
+        // CORRECTION 1 : Délai Stop Stick passé à 10 secondes (10000ms)
+        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); };
+        
         window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); db.ref('vehicles').remove(); isPEC = false; isLeader = false; updateUI(); document.getElementById('pec-choices').style.display = 'none'; setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); };
         function updateUI() { const btn = document.getElementById('btn-pec'); if(isPEC) { btn.innerText = isLeader ? "🛑 STOP" : "🏃 QUITTER LA PRISE EN CHARGE"; btn.style.background = isLeader ? "#c0392b" : "#7f8c8d"; } else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } }
         db.ref('alerts/stopstick').on('value', (s) => { const d = s.val(); if(!d) { if(!currentLeader) banner.style.display='none'; return; } if(d.active) { bannerText.innerText = "🚧 STOP STICK PAR : " + d.user; banner.className = 'alert-active alert-stopstick'; banner.style.display='block'; document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; if(lastAlerts.ss !== d.ts) { speak("Alerte Stop Stick"); lastAlerts.ss = d.ts; } } else if(d.result) { bannerText.innerText = "RESULTAT STOP STICK : " + d.result; banner.className = 'alert-active ss-success'; speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none'; } });
         
-        // ECOUTEUR FIN (SYNCHRONISATION TOTALE) [cite: 2026-02-19]
         db.ref('alerts/end').on('value', (s) => {
             const d = s.val(); 
             if(!d) { banner.style.display='none'; banner.className=''; return; }
             
-            // RESET DES ETATS POUR TOUT LE GROUPE [cite: 2026-02-19]
+            // CORRECTION 2 : Reset forcé de l'état pour tout le groupe
             isPEC = false; isLeader = false; updateUI();
             
             let cl = (d.result === 'INTERPELLATION') ? 'end-success' : (d.result === 'INDIVIDU EN FUITE' ? 'end-orange' : 'alert-pec');
             bannerText.innerText = "🏁 FIN : " + d.result + " PAR " + d.user; 
             banner.className = 'alert-active ' + cl; banner.style.display='block';
             if(lastAlerts.end !== d.ts) { 
-                speak("Fin de prise en charge, " + d.result); // Texte corrigé [cite: 2026-02-19]
+                speak("Fin de prise en charge, " + d.result); 
                 lastAlerts.end = d.ts; 
             }
         });
