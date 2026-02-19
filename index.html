@@ -14,17 +14,9 @@
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
         
         #main-title { width: 80%; margin: calc(var(--safe-top) + 5px) auto 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; }
-        
         #map { flex: 1; width: 100%; background: #222; position: relative; }
         
-        /* BOUTON RECENTRER SUR L'INITIATEUR [cite: 2026-02-19] */
-        #recenter-btn { 
-            position: absolute; bottom: 20px; right: 20px; z-index: 1000; 
-            background: rgba(52, 152, 219, 0.9); color: white; border: 2px solid white; 
-            border-radius: 50%; width: 50px; height: 50px; font-size: 22px; 
-            display: none; align-items: center; justify-content: center; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.6); cursor: pointer; 
-        }
+        #recenter-btn { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: rgba(52, 152, 219, 0.9); color: white; border: 2px solid white; border-radius: 50%; width: 50px; height: 50px; font-size: 22px; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.6); cursor: pointer; }
         
         .leaflet-tooltip-tactical { background: rgba(0,0,0,0.8); border: 1px solid #e74c3c; color: white; font-weight: bold; font-size: 10px; padding: 2px 4px; border-radius: 3px; text-transform: uppercase; }
         #notification-banner { position: absolute; top: 140px; left: 50%; transform: translateX(-50%); width: 90%; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 2000; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -35,6 +27,7 @@
         .ss-fail { background: #e74c3c !important; } 
         .end-success { background: #27ae60 !important; }
         .end-orange { background: #e67e22 !important; }
+        
         #ui-panel { padding: 15px 15px calc(var(--safe-bottom) + 10px) 15px; background: #2c2c2c; border-top: 2px solid #444; flex-shrink: 0; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; color: white; text-transform: uppercase; cursor: pointer; font-size: 0.7rem; }
@@ -56,11 +49,7 @@
         <div id="ss-choices" class="choice-box" style="display:none;"><div class="btn-res" style="background:#2ecc71" onclick="submitSS('POSITIF')">POSITIF</div><div class="btn-res" style="background:#e74c3c" onclick="submitSS('NÉGATIF')">NÉGATIF</div></div>
         <div id="pec-choices" class="choice-box" style="display:none;"><div class="btn-res" style="background:#27ae60" onclick="endInter('INTERPELLATION')">INTERP.</div><div class="btn-res" style="background:#e67e22" onclick="endInter('INDIVIDU EN FUITE')">FUITE</div><div class="btn-res" style="background:#7f8c8d" onclick="endInter('VEHICULE PERDU')">PERDU</div></div>
     </div>
-    
-    <div id="map">
-        <div id="recenter-btn">🎯</div>
-    </div>
-
+    <div id="map"><div id="recenter-btn">🎯</div></div>
     <div id="ui-panel">
         <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ" style="width: 80%; margin: 0 auto 10px auto; display: block; padding: 10px; text-align: center; background:#444; color:white; border:none; border-radius:4px;">
         <div class="btn-grid"><button style="background:#444" onclick="if(confirm('Tout effacer ?')) { firebase.database().ref().remove(); location.reload(); }">🧹 NETTOYER</button><button style="background:#8e44ad" id="btn-stopstick">🚧 STOP STICK</button><button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button></div>
@@ -73,7 +62,7 @@
 <script>
     const secretKey = "TACTICAL-UNLOCK-2026";
     let myPos = null, isPEC = false, isLeader = false, currentLeader = null, leaderPos = null, lastAlerts = { ss:0, end:0, pec:null }, markers = {};
-    let autoCenter = true, recenterTimer = null;
+    let autoCenter = true, recenterTimer = null, isMapMoving = false;
 
     function speak(t) { 
         if (window.AndroidVocal) { window.AndroidVocal.speakNative(t); } 
@@ -85,28 +74,29 @@
 
     function initApp() {
         firebase.initializeApp({ databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" });
-        const db = firebase.database(); const banner = document.getElementById('notification-banner'); const bannerText = document.getElementById('banner-text'); const idInput = document.getElementById('user-id');
-        const recenterBtn = document.getElementById('recenter-btn');
-
-        const map = L.map('map', { zoomControl: false }).setView([46, 2], 16); 
-        L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
+        const db = firebase.database(); const banner = document.getElementById('notification-banner'); const bannerText = document.getElementById('banner-text'); const idInput = document.getElementById('user-id'); const recenterBtn = document.getElementById('recenter-btn');
+        const map = L.map('map', { zoomControl: false }).setView([46, 2], 16); L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
         const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1 }).addTo(map);
 
-        // FONCTION DE RECENTRAGE TACTIQUE
+        // --- CORRECTION ZOOM : Recentrage auto sur le Leader après 10s ---
         const triggerRecenter = () => {
             autoCenter = true;
             recenterBtn.style.display = 'none';
-            // On vise le Leader en priorité, sinon soi-même
             const target = (currentLeader && leaderPos) ? leaderPos : (myPos ? [myPos.lat, myPos.lon] : null);
-            if (target) map.setView(target, map.getZoom());
+            if (target) {
+                isMapMoving = true;
+                map.setView(target, map.getZoom());
+                setTimeout(() => isMapMoving = false, 500);
+            }
         };
 
-        // Détection de l'utilisation manuelle de la carte
-        map.on('movestart zoomstart', () => { 
-            autoCenter = false; 
-            recenterBtn.style.display = 'flex'; 
-            clearTimeout(recenterTimer);
-            recenterTimer = setTimeout(triggerRecenter, 10000); // Auto-recenter après 10s
+        map.on('movestart zoomstart', (e) => { 
+            if (!isMapMoving) { // On ne désactive QUE si c'est l'utilisateur qui bouge
+                autoCenter = false; 
+                recenterBtn.style.display = 'flex'; 
+                clearTimeout(recenterTimer);
+                recenterTimer = setTimeout(triggerRecenter, 10000); 
+            }
         });
         
         recenterBtn.onclick = triggerRecenter;
@@ -114,39 +104,52 @@
         navigator.geolocation.watchPosition((p) => {
             myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
             myMarker.setLatLng([myPos.lat, myPos.lon]);
-            // Centrage auto sur soi si on n'est pas en mission
-            if (autoCenter && (!isPEC || isLeader)) map.setView([myPos.lat, myPos.lon], map.getZoom());
+            if (autoCenter && (!isPEC || isLeader)) {
+                isMapMoving = true;
+                map.setView([myPos.lat, myPos.lon], map.getZoom());
+                setTimeout(() => isMapMoving = false, 500);
+            }
             sync();
         }, null, { enableHighAccuracy: true });
 
         function sync() { if(!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if (isPEC) db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() }); else db.ref('vehicles/'+sid).remove(); }
-
-        document.getElementById('btn-pec').onclick = () => {
-            if(isPEC && isLeader) {
-                bannerText.innerText = "SÉLECTIONNER LE RÉSULTAT FINAL"; banner.className = 'alert-active alert-pec'; banner.style.display='block';
-                document.getElementById('pec-choices').style.display='flex'; document.getElementById('ss-choices').style.display='none'; return;
-            }
-            isPEC = !isPEC; isLeader = (currentLeader === null && isPEC); updateUI(); sync();
-        };
-
+        
+        document.getElementById('btn-pec').onclick = () => { if(isPEC && isLeader) { bannerText.innerText = "SÉLECTIONNER LE RÉSULTAT FINAL"; banner.className = 'alert-active alert-pec'; banner.style.display='block'; document.getElementById('pec-choices').style.display='flex'; document.getElementById('ss-choices').style.display='none'; return; } isPEC = !isPEC; isLeader = (currentLeader === null && isPEC); updateUI(); sync(); };
         document.getElementById('btn-stopstick').onclick = () => { db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true }); };
-        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); };
-        window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); db.ref('vehicles').remove(); isPEC = false; isLeader = false; updateUI(); setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); };
+        
+        window.submitSS = (r) => { 
+            db.ref('alerts/stopstick').update({ result: r, active: false }); 
+            setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); 
+        };
+        
+        window.endInter = (r) => { 
+            db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); 
+            db.ref('vehicles').remove(); isPEC = false; isLeader = false; updateUI(); 
+            setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); 
+        };
 
         function updateUI() { const btn = document.getElementById('btn-pec'); if(isPEC) { btn.innerText = isLeader ? "🛑 STOP" : "🏃 QUITTER LA PRISE EN CHARGE"; btn.style.background = isLeader ? "#c0392b" : "#7f8c8d"; } else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } }
 
+        // --- CORRECTION BANNIERE STOP STICK : Effacement forcé ---
         db.ref('alerts/stopstick').on('value', (s) => {
-            const d = s.val(); if(!d) { banner.style.display = 'none'; return; }
+            const d = s.val(); 
+            if(!d) { 
+                banner.style.display = 'none';
+                banner.className = ''; 
+                return; 
+            }
             if(d.active) {
                 bannerText.innerText = "🚧 STOP STICK PAR : " + d.user; banner.className = 'alert-active alert-stopstick'; banner.style.display='block'; document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; if(lastAlerts.ss !== d.ts) { speak("Alerte Stop Stick"); lastAlerts.ss = d.ts; }
             } else if(d.result) {
-                bannerText.innerText = "RESULTAT STOP STICK : " + d.result; banner.className = 'alert-active ' + (d.result === 'POSITIF' ? 'ss-success' : 'ss-fail'); 
-                speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none';
+                bannerText.innerText = "RESULTAT STOP STICK : " + d.result; 
+                banner.className = 'alert-active ' + (d.result === 'POSITIF' ? 'ss-success' : 'ss-fail'); 
+                speak("Stop stick " + d.result); 
+                document.getElementById('ss-choices').style.display = 'none';
             }
         });
-
+        
         db.ref('alerts/end').on('value', (s) => {
-            const d = s.val(); if(!d) { banner.style.display='none'; return; }
+            const d = s.val(); if(!d) { banner.style.display='none'; banner.className=''; return; }
             isPEC = false; isLeader = false; updateUI(); 
             let cl = (d.result === 'INTERPELLATION') ? 'end-success' : (d.result === 'INDIVIDU EN FUITE' ? 'end-orange' : 'alert-pec');
             bannerText.innerText = "🏁 FIN : " + d.result + " PAR " + d.user; banner.className = 'alert-active ' + cl; banner.style.display='block';
@@ -154,23 +157,22 @@
         });
 
         db.ref('vehicles').on('value', (s) => {
-            const data = s.val() || {}; let minD = Infinity; leaderPos = null; currentLeader = null;
-            const mySid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
-
+            const data = s.val() || {}; let minD = Infinity; leaderPos = null; currentLeader = null; const mySid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
             for(let id in data) {
-                const v = data[id]; const name = id.replace(/_/g, ' ');
-                if(v.active) { 
-                    currentLeader = name; leaderPos = [v.lat, v.lon]; 
-                    if(lastAlerts.pec !== currentLeader) { speak("Prise en charge par " + currentLeader); lastAlerts.pec = currentLeader; }
-                }
+                const v = data[id]; const name = id.replace(/_/g, ' '); if(v.active) { currentLeader = name; leaderPos = [v.lat, v.lon]; if(lastAlerts.pec !== currentLeader) { speak("Prise en charge par " + currentLeader); lastAlerts.pec = currentLeader; } }
                 if(id !== mySid) {
                     if(!markers[id]) { markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindTooltip(name, { permanent: true, direction: 'top', className: 'leaflet-tooltip-tactical' }); }
                     markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71', fillColor: v.active ? '#ff0000' : '#2ecc71' });
                     if(isPEC && v.isMission) { const d = map.distance([myPos.lat, myPos.lon], [v.lat, v.lon]); if(d < minD) minD = d; }
                 }
             }
-            // Suivi Leader forcé si autoCenter est actif
-            if (autoCenter && isPEC && !isLeader && leaderPos) map.setView(leaderPos, map.getZoom());
+            
+            // Suivi Leader (avec flag anti-conflit)
+            if (autoCenter && isPEC && !isLeader && leaderPos) {
+                isMapMoving = true;
+                map.setView(leaderPos, map.getZoom());
+                setTimeout(() => isMapMoving = false, 500);
+            }
             
             for(let id in markers) { if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; } }
             document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
