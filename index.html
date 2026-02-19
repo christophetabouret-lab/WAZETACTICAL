@@ -10,15 +10,41 @@
         :root { --safe-top: env(safe-area-inset-top, 25px); --safe-bottom: env(safe-area-inset-bottom, 30px); }
         html, body { height: 100%; margin: 0; padding: 0; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; }
         
-        /* Proximité uniquement active si class ajoutée */
         .proximity-orange { border: 8px solid #e67e22 !important; box-sizing: border-box; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; box-sizing: border-box; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
 
-        #main-title { width: 80%; margin: calc(var(--safe-top) + 5px) auto 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; }
+        #main-title { 
+            width: 80%; 
+            margin: calc(var(--safe-top) + 5px) auto 10px auto; 
+            text-align: center; 
+            padding: 10px; 
+            border: 2px solid #e74c3c; 
+            color: #e74c3c; 
+            font-weight: bold; 
+            background: #2c2c2c; 
+            border-radius: 8px; 
+            text-transform: uppercase; 
+            flex-shrink: 0; 
+        }
+        
         #map { flex: 1; width: 100%; background: #222; }
         
-        #notification-banner { position: absolute; top: 140px; left: 50%; transform: translateX(-50%); width: 90%; padding: 12px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 1001; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        #notification-banner { 
+            position: absolute; 
+            top: 140px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            width: 90%; 
+            padding: 12px; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            text-align: center; 
+            z-index: 1001; 
+            display: none; 
+            border: 2px solid white; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); 
+        }
         .alert-active { display: block !important; }
         .alert-pec { background: #ff0000 !important; }
         .alert-stopstick { background: #8e44ad !important; }
@@ -32,6 +58,7 @@
         #btn-pec { background: #e67e22; grid-column: span 2; min-height: 55px; }
         .choice-box { display: flex; gap: 5px; justify-content: center; margin-top: 10px; }
         .btn-res { padding: 8px 5px; border: 1px solid white; border-radius: 4px; font-size: 0.55rem; min-width: 30%; font-weight: bold; cursor: pointer; }
+        
         #qr-lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     </style>
 </head>
@@ -44,6 +71,7 @@
 
 <div id="main-app" style="display:none; flex-direction: column; height: 100vh;">
     <div id="main-title">TACTICAL DEPLOY</div>
+    
     <div id="notification-banner">
         <div id="banner-text"></div>
         <div id="ss-choices" class="choice-box" style="display:none;">
@@ -56,11 +84,13 @@
             <div class="btn-res" style="background:#7f8c8d" onclick="endInter('VL PERDU')">VL PERDU</div>
         </div>
     </div>
+
     <div id="map"></div>
+
     <div id="ui-panel">
         <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ" style="width: 80%; margin: 0 auto 10px auto; display: block; padding: 10px; text-align: center; background:#444; color:white; border:none; border-radius:4px;">
         <div class="btn-grid">
-            <button style="background:#444" onclick="if(confirm('Nettoyer ?')) { firebase.database().ref().remove(); location.reload(); }">🧹 NETTOYER</button>
+            <button style="background:#444" onclick="if(confirm('Nettoyer la carte ?')) { firebase.database().ref().remove(); location.reload(); }">🧹 NETTOYER</button>
             <button style="background:#8e44ad" id="btn-stopstick">🚧 STOP STICK</button>
             <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
         </div>
@@ -114,19 +144,19 @@
         const map = L.map('map', { zoomControl: false }).setView([46, 2], 16);
         L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
         setTimeout(() => map.invalidateSize(), 800);
+
         const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1 }).addTo(map);
         
         navigator.geolocation.watchPosition((p) => {
             myPos = { lat: p.coords.latitude, lon: p.coords.longitude };
             myMarker.setLatLng([myPos.lat, myPos.lon]);
             map.setView([myPos.lat, myPos.lon], map.getZoom());
-            sync(); // Sync permanent mais avec flag isPEC
+            sync();
         }, null, { enableHighAccuracy: true });
 
         function sync() {
             if(!myPos) return;
             const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
-            // On ne s'inscrit en "actif" que si isPEC est vrai
             if (isPEC) {
                 db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() });
             } else {
@@ -158,6 +188,7 @@
             db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); 
             db.ref('vehicles').remove(); 
             isPEC = false; isLeader = false; updateUI();
+            document.getElementById('pec-choices').style.display = 'none';
         };
 
         function updateUI() {
@@ -171,9 +202,12 @@
             }
         }
 
-        // Écouteur Stop Stick
         db.ref('alerts/stopstick').on('value', (s) => {
-            const d = s.val(); if(!d) { if(!currentLeader) banner.style.display='none'; return; }
+            const d = s.val(); 
+            if(!d) { 
+                if(!currentLeader) { banner.style.display='none'; banner.className=''; }
+                return; 
+            }
             if(d.active) {
                 bannerText.innerText = "🚧 STOP STICK PAR : " + d.user;
                 banner.className = 'alert-active alert-stopstick'; banner.style.display='block';
@@ -183,22 +217,22 @@
             } else if(d.result) {
                 bannerText.innerText = "RESULTAT STOP STICK : " + d.result;
                 banner.className = 'alert-active ss-success'; speak("Stop stick " + d.result);
-                setTimeout(() => banner.style.display='none', 4000);
+                document.getElementById('ss-choices').style.display = 'none';
+                setTimeout(() => { if(!currentLeader) banner.style.display='none'; }, 4000);
             }
         });
 
-        // Écouteur Fin d'Interception
         db.ref('alerts/end').on('value', (s) => {
-            const d = s.val(); if(!d) { banner.style.display='none'; return; }
+            const d = s.val(); 
+            if(!d) { banner.style.display='none'; banner.className=''; return; }
             let cl = (d.result === 'INTERPELLATION') ? 'end-success' : (d.result === 'INDIVIDU EN FUITE' ? 'end-orange' : 'alert-pec');
             bannerText.innerText = "🏁 FIN : " + d.result + " PAR " + d.user; 
             banner.className = 'alert-active ' + cl; banner.style.display='block';
             document.getElementById('pec-choices').style.display = 'none';
             if(lastAlerts.end !== d.ts) { speak("Fin d'interception, " + d.result); lastAlerts.end = d.ts; }
-            setTimeout(() => { banner.style.display='none'; db.ref('alerts/end').remove(); }, 5000);
+            setTimeout(() => { db.ref('alerts/end').remove(); }, 5000);
         });
 
-        // Écouteur Véhicules & PROXIMITÉ
         db.ref('vehicles').on('value', (s) => {
             const data = s.val() || {}; 
             let minD = Infinity; 
@@ -207,21 +241,19 @@
 
             for(let id in data) {
                 if(data[id].active) currentLeader = id.replace(/_/g, ' ');
-                // Proximité : Uniquement si JE SUIS en mission ET que l'AUTRE est en mission
                 if(isPEC && data[id].isMission && id !== mySid) {
                     const d = map.distance([myPos.lat, myPos.lon], [data[id].lat, data[id].lon]);
                     if(d < minD) minD = d;
                 }
             }
 
-            // Gestion du clignotement : Uniquement si minD est calculé
             appBody.className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
-            // Affichage bannière Leader
-            if(currentLeader && currentLeader !== idInput.value.toUpperCase() && !isPEC && !banner.classList.contains('alert-stopstick')) {
+            if(currentLeader && currentLeader !== idInput.value.toUpperCase() && !isPEC && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success')) {
                 bannerText.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); 
                 banner.className = 'alert-active alert-pec'; banner.style.display='block';
-            } else if (!currentLeader && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success')) {
+                document.getElementById('pec-choices').style.display = 'none';
+            } else if (!currentLeader && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('end-success') && !banner.classList.contains('end-orange')) {
                 banner.style.display = 'none';
             }
             updateUI();
