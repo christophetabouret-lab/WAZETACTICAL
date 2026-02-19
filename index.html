@@ -102,7 +102,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
     const secretKey = "TACTICAL-UNLOCK-2026";
-    let myPos = null, isPEC = false, isLeader = false, currentLeader = null, lastAlerts = { ss:0, end:0 };
+    let myPos = null, isPEC = false, isLeader = false, currentLeader = null, lastAlerts = { ss:0, end:0, pec:null };
 
     function speak(t) { 
         if (window.AndroidVocal) { window.AndroidVocal.speakNative(t); } 
@@ -175,7 +175,6 @@
             isPEC = !isPEC; 
             isLeader = (currentLeader === null && isPEC); 
             updateUI(); sync();
-            if(isPEC && isLeader) speak("Démarrage prise en charge");
         };
 
         document.getElementById('btn-stopstick').onclick = () => {
@@ -202,12 +201,10 @@
             }
         }
 
+        // ÉCOUTEUR STOP STICK
         db.ref('alerts/stopstick').on('value', (s) => {
             const d = s.val(); 
-            if(!d) { 
-                if(!currentLeader) { banner.style.display='none'; banner.className=''; }
-                return; 
-            }
+            if(!d) { if(!currentLeader) { banner.style.display='none'; banner.className=''; } return; }
             if(d.active) {
                 bannerText.innerText = "🚧 STOP STICK PAR : " + d.user;
                 banner.className = 'alert-active alert-stopstick'; banner.style.display='block';
@@ -222,6 +219,7 @@
             }
         });
 
+        // ÉCOUTEUR FIN
         db.ref('alerts/end').on('value', (s) => {
             const d = s.val(); 
             if(!d) { banner.style.display='none'; banner.className=''; return; }
@@ -233,6 +231,7 @@
             setTimeout(() => { db.ref('alerts/end').remove(); }, 5000);
         });
 
+        // ÉCOUTEUR VÉHICULES (GÈRE LA VOIX PRISE EN CHARGE)
         db.ref('vehicles').on('value', (s) => {
             const data = s.val() || {}; 
             let minD = Infinity; 
@@ -240,7 +239,15 @@
             const mySid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
 
             for(let id in data) {
-                if(data[id].active) currentLeader = id.replace(/_/g, ' ');
+                const name = id.replace(/_/g, ' ');
+                if(data[id].active) {
+                    currentLeader = name;
+                    // --- CORRECTION VOIX : Déclenchement pour TOUT LE MONDE ---
+                    if(lastAlerts.pec !== currentLeader) {
+                        speak(currentLeader + " prend en charge");
+                        lastAlerts.pec = currentLeader;
+                    }
+                }
                 if(isPEC && data[id].isMission && id !== mySid) {
                     const d = map.distance([myPos.lat, myPos.lon], [data[id].lat, data[id].lon]);
                     if(d < minD) minD = d;
@@ -249,12 +256,13 @@
 
             appBody.className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
-            if(currentLeader && currentLeader !== idInput.value.toUpperCase() && !isPEC && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success')) {
+            // --- CORRECTION TEXTE BANNIÈRE ---
+            if(currentLeader && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('end-success') && !banner.classList.contains('end-orange')) {
                 bannerText.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); 
                 banner.className = 'alert-active alert-pec'; banner.style.display='block';
-                document.getElementById('pec-choices').style.display = 'none';
             } else if (!currentLeader && !banner.classList.contains('alert-stopstick') && !banner.classList.contains('ss-success') && !banner.classList.contains('end-success') && !banner.classList.contains('end-orange')) {
                 banner.style.display = 'none';
+                lastAlerts.pec = null; // Reset pour la prochaine alerte
             }
             updateUI();
         });
