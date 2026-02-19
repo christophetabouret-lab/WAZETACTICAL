@@ -10,30 +10,57 @@
         :root { --safe-top: env(safe-area-inset-top, 25px); --safe-bottom: env(safe-area-inset-bottom, 30px); }
         html, body { height: 100%; margin: 0; padding: 0; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; }
         
-        /* Bordures de proximité [cite: 2021-01-21] */
         .proximity-orange { border: 8px solid #e67e22 !important; box-sizing: border-box; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; box-sizing: border-box; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
 
-        /* Titre 80% sous l'heure [cite: 2026-01-25] */
-        #main-title { width: 80%; margin: calc(var(--safe-top) + 5px) auto 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; }
+        /* Titre 80% centré sous l'heure [cite: 2026-01-25] */
+        #main-title { 
+            width: 80%; 
+            margin: calc(var(--safe-top) + 5px) auto 10px auto; 
+            text-align: center; 
+            padding: 10px; 
+            border: 2px solid #e74c3c; 
+            color: #e74c3c; 
+            font-weight: bold; 
+            background: #2c2c2c; 
+            border-radius: 8px; 
+            text-transform: uppercase; 
+            flex-shrink: 0; 
+        }
         
         #map { flex: 1; width: 100%; background: #222; }
         
-        /* Bannières d'alertes [cite: 2026-01-24] */
-        #notification-banner { position: absolute; top: 130px; left: 50%; transform: translateX(-50%); width: 85%; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 1001; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        /* Bannière ajustée pour 3 boutons */
+        #notification-banner { 
+            position: absolute; 
+            top: 140px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            width: 90%; 
+            padding: 12px; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            text-align: center; 
+            z-index: 1001; 
+            display: none; 
+            border: 2px solid white; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); 
+        }
         .alert-active { display: block !important; }
         .alert-pec { background: #ff0000 !important; }
         .alert-stopstick { background: #8e44ad !important; }
         .ss-success { background: #2ecc71 !important; }
         .end-success { background: #27ae60 !important; }
+        .end-orange { background: #e67e22 !important; } /* Couleur pour Fuite */
 
-        #ui-panel { padding: 15px 15px calc(var(--safe-bottom) + 5px) 15px; background: #2c2c2c; border-top: 2px solid #444; flex-shrink: 0; }
+        #ui-panel { padding: 15px 15px calc(var(--safe-bottom) + 10px) 15px; background: #2c2c2c; border-top: 2px solid #444; flex-shrink: 0; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; color: white; text-transform: uppercase; cursor: pointer; font-size: 0.7rem; }
         #btn-pec { background: #e67e22; grid-column: span 2; min-height: 55px; }
-        .choice-box { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
-        .btn-res { padding: 8px 12px; border: 1px solid white; border-radius: 4px; font-size: 0.6rem; }
+        
+        .choice-box { display: flex; gap: 5px; justify-content: center; margin-top: 10px; flex-wrap: nowrap; }
+        .btn-res { padding: 8px 5px; border: 1px solid white; border-radius: 4px; font-size: 0.55rem; min-width: 30%; font-weight: bold; cursor: pointer; }
         
         #qr-lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     </style>
@@ -56,6 +83,7 @@
         </div>
         <div id="pec-choices" class="choice-box" style="display:none;">
             <div class="btn-res" style="background:#27ae60" onclick="endInter('INTERPELLATION')">INTERPELLATION</div>
+            <div class="btn-res" style="background:#e67e22" onclick="endInter('INDIVIDU EN FUITE')">INDIVIDU EN FUITE</div>
             <div class="btn-res" style="background:#7f8c8d" onclick="endInter('VL PERDU')">VL PERDU</div>
         </div>
     </div>
@@ -65,7 +93,7 @@
     <div id="ui-panel">
         <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ" style="width: 80%; margin: 0 auto 10px auto; display: block; padding: 10px; text-align: center; background:#444; color:white; border:none; border-radius:4px;">
         <div class="btn-grid">
-            <button style="background:#444" onclick="location.reload()">🧹 NETTOYER</button>
+            <button style="background:#444" onclick="if(confirm('Nettoyer la carte ?')) location.reload()">🧹 NETTOYER</button>
             <button style="background:#8e44ad" id="btn-stopstick">🚧 STOP STICK</button>
             <button id="btn-pec">🚨 DÉMARRER PRISE EN CHARGE</button>
         </div>
@@ -77,7 +105,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
     const secretKey = "TACTICAL-UNLOCK-2026";
-    let myPos = null, isPEC = false, isLeader = false, lastAlerts = { ss:0, pec:null, end:0 };
+    let myPos = null, isPEC = false, isLeader = false, currentLeader = null, lastAlerts = { ss:0, end:0 };
 
     function speak(t) { 
         if (window.AndroidVocal) { window.AndroidVocal.speakNative(t); } 
@@ -134,17 +162,18 @@
             else db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, ts: Date.now() });
         }
 
-        // --- ACTIONS BOUTONS ---
         document.getElementById('btn-pec').onclick = () => {
             if(isPEC && isLeader) {
                 bannerText.innerText = "RÉSULTAT DE L'INTERCEPTION";
                 banner.className = 'alert-active alert-pec'; banner.style.display='block';
                 document.getElementById('pec-choices').style.display='flex';
+                document.getElementById('ss-choices').style.display='none';
                 return;
             }
-            isPEC = !isPEC; isLeader = isPEC; 
+            isPEC = !isPEC; 
+            isLeader = (currentLeader === null && isPEC); 
             updateUI(); sync(!isPEC);
-            if(isPEC) speak("Démarrage prise en charge");
+            if(isPEC && isLeader) speak("Démarrage prise en charge");
         };
 
         document.getElementById('btn-stopstick').onclick = () => {
@@ -152,50 +181,72 @@
         };
 
         window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => db.ref('alerts/stopstick').remove(), 3000); };
-        window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value, ts: Date.now() }); db.ref('vehicles').remove(); isPEC=false; isLeader=false; updateUI(); };
+        
+        // Fonction mise à jour pour gérer le résultat [cite: 2026-01-26]
+        window.endInter = (r) => { 
+            db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); 
+            db.ref('vehicles').remove(); 
+            isPEC=false; isLeader=false; 
+            updateUI();
+        };
 
         function updateUI() {
             const btn = document.getElementById('btn-pec');
-            btn.innerText = isPEC ? (isLeader ? "🛑 STOP" : "🏃 QUITTER") : "🚨 DÉMARRER PRISE EN CHARGE";
-            btn.style.background = isLeader ? "#c0392b" : "#e67e22";
+            if(isPEC) {
+                btn.innerText = isLeader ? "🛑 STOP" : "🏃 QUITTER LA PRISE EN CHARGE";
+                btn.style.background = isLeader ? "#c0392b" : "#7f8c8d";
+            } else {
+                btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE";
+                btn.style.background = "#e67e22";
+            }
         }
 
-        // --- LE MOTEUR D'ALERTES (FIREBASE) ---
         db.ref('alerts/stopstick').on('value', (s) => {
-            const d = s.val(); if(!d) { banner.style.display='none'; return; }
+            const d = s.val(); if(!d) { if(!currentLeader) banner.style.display='none'; return; }
             if(d.active) {
-                bannerText.innerText = "🚧 STOP STICK : " + d.user;
+                bannerText.innerText = "🚧 STOP STICK PAR : " + d.user;
                 banner.className = 'alert-active alert-stopstick'; banner.style.display='block';
                 document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none';
+                document.getElementById('pec-choices').style.display = 'none';
                 if(lastAlerts.ss !== d.ts) { speak("Alerte Stop Stick"); lastAlerts.ss = d.ts; }
             } else if(d.result) {
                 bannerText.innerText = "RESULTAT STOP STICK : " + d.result;
                 banner.className = 'alert-active ss-success'; speak("Stop stick " + d.result);
+                document.getElementById('ss-choices').style.display = 'none';
                 setTimeout(() => banner.style.display='none', 4000);
             }
         });
 
         db.ref('alerts/end').on('value', (s) => {
-            const d = s.val(); if(!d) return;
-            bannerText.innerText = "🏁 FIN : " + d.result; banner.className = 'alert-active end-success'; banner.style.display='block';
+            const d = s.val(); if(!d) { banner.style.display='none'; return; }
+            bannerText.innerText = "🏁 FIN : " + d.result + " PAR " + d.user; 
+            // Couleur dynamique selon le résultat
+            let cl = 'end-success';
+            if(d.result === 'INDIVIDU EN FUITE') cl = 'end-orange';
+            if(d.result === 'VL PERDU') cl = 'end-lost';
+            
+            banner.className = 'alert-active ' + cl; banner.style.display='block';
+            document.getElementById('pec-choices').style.display = 'none';
             if(lastAlerts.end !== d.ts) { speak("Fin d'interception, " + d.result); lastAlerts.end = d.ts; }
             setTimeout(() => { banner.style.display='none'; db.ref('alerts/end').remove(); }, 5000);
         });
 
         db.ref('vehicles').on('value', (s) => {
-            const data = s.val() || {}; let minD = Infinity; let leader = null;
+            const data = s.val() || {}; let minD = Infinity; currentLeader = null;
             for(let id in data) {
-                if(data[id].active) leader = id.replace(/_/g, ' ');
-                if(myPos && id !== idInput.value.replace(/ /g, '_')) {
+                const name = id.replace(/_/g, ' ');
+                if(data[id].active) currentLeader = name;
+                if(myPos && id !== idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_")) {
                     const d = map.distance([myPos.lat, myPos.lon], [data[id].lat, data[id].lon]);
                     if(d < minD) minD = d;
                 }
             }
             document.getElementById('app-body').className = minD < 200 ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
-            if(leader && leader !== idInput.value.toUpperCase() && !isPEC) {
-                bannerText.innerText = "🚨 PEC EN COURS : " + leader; banner.className = 'alert-active alert-pec'; banner.style.display='block';
-                if(lastAlerts.pec !== leader) { speak(leader + " prend en charge"); lastAlerts.pec = leader; }
+            if(currentLeader && currentLeader !== idInput.value.toUpperCase() && !isPEC && !banner.classList.contains('alert-stopstick')) {
+                bannerText.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); 
+                banner.className = 'alert-active alert-pec'; banner.style.display='block';
             }
+            updateUI();
         });
     }
 </script>
