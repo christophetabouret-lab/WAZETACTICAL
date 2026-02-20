@@ -9,32 +9,46 @@
     <style>
         :root { --safe-top: env(safe-area-inset-top, 25px); --safe-bottom: env(safe-area-inset-bottom, 30px); }
         html, body { height: 100%; margin: 0; padding: 0; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; font-family: sans-serif; }
+        
         .proximity-orange { border: 8px solid #e67e22 !important; box-sizing: border-box; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; box-sizing: border-box; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
+        
         #main-title { width: 80%; margin: calc(var(--safe-top) + 5px) auto 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; }
         .title-active { animation: blink-title 1.2s infinite; background: #441111 !important; border-color: #ff0000 !important; color: #ff0000 !important; }
         @keyframes blink-title { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
         #map { flex: 1; width: 100%; background: #222; position: relative; }
         #recenter-btn { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: rgba(52, 152, 219, 0.9); color: white; border: 2px solid white; border-radius: 50%; width: 55px; height: 55px; font-size: 24px; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.6); cursor: pointer; }
-        .leaflet-tooltip-tactical { background: rgba(0,0,0,0.8); border: 1px solid #e74c3c; color: white; font-weight: bold; font-size: 10px; padding: 2px 4px; border-radius: 3px; text-transform: uppercase; }
+        
         #notification-banner { position: absolute; top: 140px; left: 50%; transform: translateX(-50%); width: 90%; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 2000; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         .alert-active { display: block !important; }
+        
         .bg-red { background: #ff0000 !important; }
         .bg-purple { background: #8e44ad !important; }
         .bg-green { background: #2ecc71 !important; }
         .bg-orange { background: #e67e22 !important; }
         .bg-grey { background: #7f8c8d !important; }
+
         #ui-panel { padding: 15px 15px calc(var(--safe-bottom) + 10px) 15px; background: #2c2c2c; border-top: 2px solid #444; flex-shrink: 0; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; color: white; text-transform: uppercase; cursor: pointer; font-size: 0.7rem; }
         #btn-main { background: #e67e22; grid-column: span 2; min-height: 55px; }
         .choice-box { display: flex; gap: 5px; justify-content: center; margin-top: 12px; }
         .btn-res { padding: 10px 5px; border: 1px solid white; border-radius: 4px; font-size: 0.55rem; min-width: 31%; font-weight: bold; cursor: pointer; }
+
+        /* Écran QR Code */
+        #qr-lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     </style>
 </head>
 <body id="app-body">
-<div id="main-app" style="display: flex; flex-direction: column; height: 100vh;">
+
+<div id="qr-lock-screen">
+    <div style="color:#e74c3c; font-weight:bold; margin-bottom:15px; text-transform: uppercase;">🔐 IDENTIFICATION TACTIQUE</div>
+    <div id="reader" style="width: 85%; max-width: 400px;"></div>
+</div>
+
+<div id="main-app" style="display:none; flex-direction: column; height: 100vh;">
     <div id="main-title">TACTICAL DEPLOY</div>
     <div id="notification-banner">
         <div id="banner-text"></div>
@@ -52,12 +66,30 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+    const secretKey = "TACTICAL-UNLOCK-2026";
     let myPos = null, inAction = false, isLeader = false, currentLeader = null, leaderPos = null, markers = {}, bannerLockUntil = 0;
     let autoCenter = true, recenterTimer = null, isMapMoving = false, bannerStartTime = 0, lastKnownLeader = null;
 
     function speak(t) { 
         if (window.AndroidVocal) { window.AndroidVocal.speakNative(t); } 
         else if ('speechSynthesis' in window) { window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'fr-FR'; window.speechSynthesis.speak(u); } 
+    }
+
+    function unlock() { 
+        localStorage.setItem('tactical_authorized', 'true'); 
+        document.getElementById('qr-lock-screen').style.display = 'none'; 
+        document.getElementById('main-app').style.display = 'flex'; 
+        initApp(); 
+    }
+
+    if (localStorage.getItem('tactical_authorized') === 'true') { unlock(); }
+    else { 
+        const html5QrCode = new Html5Qrcode("reader"); 
+        setTimeout(() => { 
+            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => { 
+                if(txt.trim() === secretKey) { html5QrCode.stop().then(unlock); } 
+            }); 
+        }, 1500); 
     }
 
     function setBanner(txt, cl, lockMs = 0) {
@@ -72,74 +104,75 @@
         }
     }
 
-    firebase.initializeApp({ databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" });
-    const db = firebase.database(); const idInput = document.getElementById('user-id'); const recenterBtn = document.getElementById('recenter-btn'); const mainTitle = document.getElementById('main-title');
-    const map = L.map('map', { zoomControl: false }).setView([46, 2], 16); L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
-    const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1 }).addTo(map);
+    function initApp() {
+        firebase.initializeApp({ databaseURL: "https://poursuite-tactique-default-rtdb.europe-west1.firebasedatabase.app/" });
+        const db = firebase.database(); const idInput = document.getElementById('user-id'); const recenterBtn = document.getElementById('recenter-btn'); const mainTitle = document.getElementById('main-title');
+        const map = L.map('map', { zoomControl: false }).setView([46, 2], 16); L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
+        const myMarker = L.circleMarker([0, 0], { color: '#3498db', radius: 10, fillOpacity: 1 }).addTo(map);
 
-    const triggerRecenter = () => { autoCenter = true; recenterBtn.style.display = 'none'; const target = (currentLeader && leaderPos) ? leaderPos : (myPos ? [myPos.lat, myPos.lon] : null); if (target) { isMapMoving = true; map.setView(target, map.getZoom()); setTimeout(() => isMapMoving = false, 500); } };
-    map.on('movestart zoomstart', () => { if (!isMapMoving) { autoCenter = false; recenterBtn.style.display = 'flex'; clearTimeout(recenterTimer); recenterTimer = setTimeout(triggerRecenter, 10000); } });
-    recenterBtn.onclick = triggerRecenter;
-    
-    navigator.geolocation.watchPosition((p) => {
-        myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; myMarker.setLatLng([myPos.lat, myPos.lon]);
-        if (autoCenter && (!inAction || isLeader)) { isMapMoving = true; map.setView([myPos.lat, myPos.lon], map.getZoom()); setTimeout(() => isMapMoving = false, 500); }
-        if (inAction) sync();
-    }, null, { enableHighAccuracy: true });
+        const triggerRecenter = () => { autoCenter = true; recenterBtn.style.display = 'none'; const target = (currentLeader && leaderPos) ? leaderPos : (myPos ? [myPos.lat, myPos.lon] : null); if (target) { isMapMoving = true; map.setView(target, map.getZoom()); setTimeout(() => isMapMoving = false, 500); } };
+        map.on('movestart zoomstart', () => { if (!isMapMoving) { autoCenter = false; recenterBtn.style.display = 'flex'; clearTimeout(recenterTimer); recenterTimer = setTimeout(triggerRecenter, 10000); } });
+        recenterBtn.onclick = triggerRecenter;
+        
+        navigator.geolocation.watchPosition((p) => {
+            myPos = { lat: p.coords.latitude, lon: p.coords.longitude }; myMarker.setLatLng([myPos.lat, myPos.lon]);
+            if (autoCenter && (!inAction || isLeader)) { isMapMoving = true; map.setView([myPos.lat, myPos.lon], map.getZoom()); setTimeout(() => isMapMoving = false, 500); }
+            if (inAction) sync();
+        }, null, { enableHighAccuracy: true });
 
-    function sync() { if(!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if(!sid) return; db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() }); }
-    
-    document.getElementById('btn-main').onclick = () => {
-        if(inAction && isLeader) { setBanner("SÉLECTIONNER RÉSULTAT", "bg-red"); document.getElementById('end-choices').style.display='flex'; document.getElementById('ss-choices').style.display='none'; return; }
-        inAction = !inAction; isLeader = (currentLeader === null && inAction); updateUI(); 
-        if (inAction) sync(); else { const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); db.ref('vehicles/'+sid).remove(); }
-    };
+        function sync() { if(!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if(!sid) return; db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() }); }
+        
+        document.getElementById('btn-main').onclick = () => {
+            if(inAction && isLeader) { setBanner("SÉLECTIONNER RÉSULTAT", "bg-red"); document.getElementById('end-choices').style.display='flex'; document.getElementById('ss-choices').style.display='none'; return; }
+            inAction = !inAction; isLeader = (currentLeader === null && inAction); updateUI(); 
+            if (inAction) sync(); else { const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); db.ref('vehicles/'+sid).remove(); }
+        };
 
-    document.getElementById('btn-stopstick').onclick = () => db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true });
-    window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); };
-    window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); db.ref('vehicles').remove(); inAction = false; isLeader = false; updateUI(); document.getElementById('end-choices').style.display = 'none'; setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); };
+        document.getElementById('btn-stopstick').onclick = () => db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true });
+        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); };
+        window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); db.ref('vehicles').remove(); inAction = false; isLeader = false; updateUI(); document.getElementById('end-choices').style.display = 'none'; setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); };
 
-    function updateUI() { const btn = document.getElementById('btn-main'); if(inAction) { btn.innerText = isLeader ? "🛑 STOP PRISE EN CHARGE" : "🏃 QUITTER LA PRISE EN CHARGE"; btn.style.background = isLeader ? "#c0392b" : "#7f8c8d"; } else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } }
+        function updateUI() { const btn = document.getElementById('btn-main'); if(inAction) { btn.innerText = isLeader ? "🛑 STOP PRISE EN CHARGE" : "🏃 QUITTER LA PRISE EN CHARGE"; btn.style.background = isLeader ? "#c0392b" : "#7f8c8d"; } else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } }
 
-    db.ref('alerts/stopstick').on('value', (s) => {
-        const d = s.val(); if(!d) return;
-        if(d.active) { setBanner("🚧 STOP STICK PAR : " + d.user, "bg-purple"); document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; if(bannerStartTime !== d.ts) { speak("Alerte Stop Stick"); bannerStartTime = d.ts; } }
-        else if(d.result) { setBanner("RÉSULTAT STOP STICK : " + d.result, (d.result === 'POSITIF' ? 'bg-green' : 'bg-red'), 10000); speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none'; }
-    });
-    
-    db.ref('alerts/end').on('value', (s) => {
-        const d = s.val(); if(!d) { if (Date.now() >= bannerLockUntil) document.getElementById('notification-banner').style.display = 'none'; return; }
-        inAction = false; isLeader = false; updateUI();
-        let cl = (d.result === 'INTERPELLATION') ? 'bg-green' : (d.result === 'INDIVIDU EN FUITE' ? 'bg-orange' : 'bg-grey');
-        setBanner("🏁 FIN : " + d.result + " (" + d.user + ")", cl, 10000); speak("FIN DE PRISE EN CHARGE " + d.result);
-    });
+        db.ref('alerts/stopstick').on('value', (s) => {
+            const d = s.val(); if(!d) return;
+            if(d.active) { setBanner("🚧 STOP STICK PAR : " + d.user, "bg-purple"); document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; if(bannerStartTime !== d.ts) { speak("Alerte Stop Stick"); bannerStartTime = d.ts; } }
+            else if(d.result) { setBanner("RÉSULTAT STOP STICK : " + d.result, (d.result === 'POSITIF' ? 'bg-green' : 'bg-red'), 10000); speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none'; }
+        });
+        
+        db.ref('alerts/end').on('value', (s) => {
+            const d = s.val(); if(!d) { if (Date.now() >= bannerLockUntil) document.getElementById('notification-banner').style.display = 'none'; return; }
+            inAction = false; isLeader = false; updateUI();
+            let cl = (d.result === 'INTERPELLATION') ? 'bg-green' : (d.result === 'INDIVIDU EN FUITE' ? 'bg-orange' : 'bg-grey');
+            setBanner("🏁 FIN : " + d.result + " (" + d.user + ")", cl, 10000); speak("FIN DE PRISE EN CHARGE " + d.result);
+        });
 
-    db.ref('vehicles').on('value', (s) => {
-        const data = s.val() || {}; leaderPos = null; currentLeader = null; let minD = Infinity; const mySid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
-        if (Object.keys(data).length === 0 && (inAction || currentLeader)) { inAction = false; isLeader = false; updateUI(); }
-        for(let id in data) {
-            const v = data[id]; const name = id.replace(/_/g, ' '); 
-            if(v.active) { 
-                currentLeader = name; leaderPos = [v.lat, v.lon]; 
-                // ALERTE VOCALE DE DÉMARRAGE
-                if (currentLeader !== lastKnownLeader) { speak("Prise en charge par " + currentLeader); lastKnownLeader = currentLeader; bannerStartTime = Date.now(); }
+        db.ref('vehicles').on('value', (s) => {
+            const data = s.val() || {}; leaderPos = null; currentLeader = null; let minD = Infinity; const mySid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
+            if (Object.keys(data).length === 0 && (inAction || currentLeader)) { inAction = false; isLeader = false; updateUI(); }
+            for(let id in data) {
+                const v = data[id]; const name = id.replace(/_/g, ' '); 
+                if(v.active) { 
+                    currentLeader = name; leaderPos = [v.lat, v.lon]; 
+                    if (currentLeader !== lastKnownLeader) { speak("Prise en charge par " + currentLeader); lastKnownLeader = currentLeader; bannerStartTime = Date.now(); }
+                }
+                if(id !== mySid) {
+                    if(!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindTooltip(name, { permanent: true, direction: 'top', className: 'leaflet-tooltip-tactical' });
+                    markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71', fillColor: v.active ? '#ff0000' : '#2ecc71' });
+                    if(inAction && v.isMission && myPos) { const d = map.distance([myPos.lat, myPos.lon], [v.lat, v.lon]); if(d < minD) minD = d; }
+                }
             }
-            if(id !== mySid) {
-                if(!markers[id]) markers[id] = L.circleMarker([v.lat, v.lon], { radius: 8, fillOpacity: 1 }).addTo(map).bindTooltip(name, { permanent: true, direction: 'top', className: 'leaflet-tooltip-tactical' });
-                markers[id].setLatLng([v.lat, v.lon]).setStyle({ color: v.active ? '#ff0000' : '#2ecc71', fillColor: v.active ? '#ff0000' : '#2ecc71' });
-                if(inAction && v.isMission && myPos) { const d = map.distance([myPos.lat, myPos.lon], [v.lat, v.lon]); if(d < minD) minD = d; }
-            }
-        }
-        if (autoCenter && inAction && !isLeader && leaderPos) { isMapMoving = true; map.setView(leaderPos, map.getZoom()); setTimeout(() => isMapMoving = false, 500); }
-        for(let id in markers) if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
-        document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
-        if (currentLeader) {
-            const elapsed = Date.now() - bannerStartTime; const locked = bannerLockUntil > Date.now() || document.getElementById('ss-choices').style.display.includes('flex');
-            if (elapsed < 30000 && !locked) { setBanner("🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(), "bg-red"); mainTitle.classList.remove('title-active'); }
-            else { if (!locked) document.getElementById('notification-banner').style.display = 'none'; mainTitle.classList.add('title-active'); }
-        } else { lastKnownLeader = null; bannerStartTime = 0; mainTitle.classList.remove('title-active'); if (Date.now() >= bannerLockUntil) document.getElementById('notification-banner').style.display = 'none'; }
-        updateUI();
-    });
+            if (autoCenter && inAction && !isLeader && leaderPos) { isMapMoving = true; map.setView(leaderPos, map.getZoom()); setTimeout(() => isMapMoving = false, 500); }
+            for(let id in markers) if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
+            document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
+            if (currentLeader) {
+                const elapsed = Date.now() - bannerStartTime; const locked = bannerLockUntil > Date.now() || document.getElementById('ss-choices').style.display.includes('flex');
+                if (elapsed < 30000 && !locked) { setBanner("🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(), "bg-red"); mainTitle.classList.remove('title-active'); }
+                else { if (!locked) document.getElementById('notification-banner').style.display = 'none'; mainTitle.classList.add('title-active'); }
+            } else { lastKnownLeader = null; bannerStartTime = 0; mainTitle.classList.remove('title-active'); if (Date.now() >= bannerLockUntil) document.getElementById('notification-banner').style.display = 'none'; }
+            updateUI();
+        });
+    }
 </script>
 </body>
 </html>
