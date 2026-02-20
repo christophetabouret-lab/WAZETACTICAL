@@ -9,28 +9,42 @@
     <style>
         :root { --safe-top: env(safe-area-inset-top, 25px); --safe-bottom: env(safe-area-inset-bottom, 30px); }
         html, body { height: 100%; margin: 0; padding: 0; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; font-family: sans-serif; }
+        
         .proximity-orange { border: 8px solid #e67e22 !important; box-sizing: border-box; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; box-sizing: border-box; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
-        #main-title { width: 80%; margin: calc(var(--safe-top) + 5px) auto 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; }
+        
+        #main-title { 
+            width: 80%; margin: calc(var(--safe-top) + 5px) auto 10px auto; text-align: center; padding: 10px; 
+            border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; 
+            border-radius: 8px; text-transform: uppercase; flex-shrink: 0; 
+        }
+        
+        /* CLIGNOTEMENT TITRE : Se déclenche après 20s */
         .title-active { animation: blink-title 1.2s infinite; background: #441111 !important; border-color: #ff0000 !important; color: #ff0000 !important; }
         @keyframes blink-title { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
         #map { flex: 1; width: 100%; background: #222; position: relative; }
         #recenter-btn { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: rgba(52, 152, 219, 0.9); color: white; border: 2px solid white; border-radius: 50%; width: 55px; height: 55px; font-size: 24px; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.6); cursor: pointer; }
+        
         .leaflet-tooltip-tactical { background: rgba(0,0,0,0.8); border: 1px solid #e74c3c; color: white; font-weight: bold; font-size: 10px; padding: 2px 4px; border-radius: 3px; text-transform: uppercase; }
+        
         #notification-banner { position: absolute; top: 140px; left: 50%; transform: translateX(-50%); width: 90%; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 2000; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         .alert-active { display: block !important; }
+        
         .bg-red { background: #ff0000 !important; }
         .bg-purple { background: #8e44ad !important; }
         .bg-green { background: #2ecc71 !important; }
         .bg-orange { background: #e67e22 !important; }
         .bg-grey { background: #7f8c8d !important; }
+
         #ui-panel { padding: 15px 15px calc(var(--safe-bottom) + 10px) 15px; background: #2c2c2c; border-top: 2px solid #444; flex-shrink: 0; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; color: white; text-transform: uppercase; cursor: pointer; font-size: 0.7rem; }
         #btn-main { background: #e67e22; grid-column: span 2; min-height: 55px; }
         .choice-box { display: flex; gap: 5px; justify-content: center; margin-top: 12px; }
         .btn-res { padding: 10px 5px; border: 1px solid white; border-radius: 4px; font-size: 0.55rem; min-width: 31%; font-weight: bold; cursor: pointer; }
+        
         #qr-lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     </style>
 </head>
@@ -144,15 +158,15 @@
             for(let id in markers) if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
             document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
-            // --- LOGIQUE BANNIERE 30 SECONDES ---
+            // LOGIQUE 20 SECONDES + BLINK TITRE
             if (currentLeader) {
                 const elapsed = Date.now() - bannerStartTime;
                 const locked = (Date.now() < bannerLockUntil) || document.getElementById('ss-choices').style.display !== 'none' || document.getElementById('end-choices').style.display !== 'none';
-                if (elapsed < 30000 && !locked) {
+                if (elapsed < 20000 && !locked) {
                     const b = document.getElementById('notification-banner'); const bt = document.getElementById('banner-text');
                     b.className = 'alert-active bg-red'; bt.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); b.style.display = 'block';
                     mainTitle.classList.remove('title-active');
-                } else if (elapsed >= 30000 && !locked) {
+                } else if (elapsed >= 20000 && !locked) {
                     document.getElementById('notification-banner').style.display = 'none';
                     mainTitle.classList.add('title-active');
                 }
