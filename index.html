@@ -101,14 +101,28 @@
         function sync() { if(!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if(!sid) return; db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() }); }
         
         document.getElementById('btn-main').onclick = () => {
-            if(inAction && isLeader) { setBanner("RÉSULTAT DE LA PRISE EN CHARGE", "bg-red"); document.getElementById('end-choices').style.display='flex'; document.getElementById('ss-choices').style.display='none'; return; }
+            if(inAction && isLeader) { 
+                bannerStartTime = 0; // On "tue" le chrono de 20s pour la sélection
+                setBanner("SÉLECTIONNER RÉSULTAT", "bg-red"); 
+                document.getElementById('end-choices').style.display='flex'; 
+                document.getElementById('ss-choices').style.display='none'; 
+                return; 
+            }
             inAction = !inAction; isLeader = (currentLeader === null && inAction); updateUI(); 
             if (inAction) sync(); else { const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); db.ref('vehicles/'+sid).remove(); }
         };
 
         document.getElementById('btn-stopstick').onclick = () => db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true });
-        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); };
-        window.endInter = (r) => { db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); db.ref('vehicles').remove(); inAction = false; isLeader = false; updateUI(); document.getElementById('end-choices').style.display = 'none'; setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); };
+        window.submitSS = (r) => { 
+            db.ref('alerts/stopstick').update({ result: r, active: false }); 
+            setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); 
+        };
+        window.endInter = (r) => { 
+            db.ref('alerts/end').set({ result: r, user: idInput.value.toUpperCase(), ts: Date.now() }); 
+            db.ref('vehicles').remove(); inAction = false; isLeader = false; updateUI(); 
+            document.getElementById('end-choices').style.display = 'none'; 
+            setTimeout(() => { db.ref('alerts/end').remove(); }, 10000); 
+        };
 
         function updateUI() { const btn = document.getElementById('btn-main'); if(inAction) { btn.innerText = isLeader ? "🛑 STOP PRISE EN CHARGE" : "🏃 QUITTER LA PRISE EN CHARGE"; btn.style.background = isLeader ? "#c0392b" : "#7f8c8d"; } else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } }
 
@@ -119,7 +133,11 @@
                 setBanner("🚧 STOP STICK PAR : " + d.user, "bg-purple"); 
                 document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; 
             }
-            else if(d.result) { setBanner("RÉSULTAT STOP STICK : " + d.result, (d.result === 'POSITIF' ? 'bg-green' : 'bg-red'), 10000); speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none'; }
+            else if(d.result) { 
+                setBanner("RÉSULTAT STOP STICK : " + d.result, (d.result === 'POSITIF' ? 'bg-green' : 'bg-red'), 10000); 
+                speak("Stop stick " + d.result); 
+                document.getElementById('ss-choices').style.display = 'none'; 
+            }
         });
         
         db.ref('alerts/end').on('value', (s) => {
@@ -132,6 +150,9 @@
         db.ref('vehicles').on('value', (s) => {
             const data = s.val() || {}; leaderPos = null; currentLeader = null; let minD = Infinity; const mySid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
             const banner = document.getElementById('notification-banner');
+            const endChoices = document.getElementById('end-choices');
+            const ssChoices = document.getElementById('ss-choices');
+
             if (Object.keys(data).length === 0 && (inAction || currentLeader)) { inAction = false; isLeader = false; updateUI(); }
             for(let id in data) {
                 const v = data[id]; const name = id.replace(/_/g, ' '); 
@@ -149,15 +170,20 @@
             for(let id in markers) if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
             document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
-            // --- LOGIQUE BANNIERE 20 SECONDES ---
+            // --- LOGIQUE BANNIERE PRIORITAIRE ---
+            const choicesActive = endChoices.style.display !== 'none' || ssChoices.style.display !== 'none';
+            if (choicesActive) return; // SI LES BOUTONS SONT LA, ON NE TOUCHE A RIEN
+
             if (currentLeader) {
                 const elapsed = Date.now() - bannerStartTime;
-                const isPriorityAlert = (Date.now() < bannerLockUntil) || banner.classList.contains('bg-purple');
-                if (elapsed < 20000 && !isPriorityAlert) {
-                    const bt = document.getElementById('banner-text');
-                    banner.className = 'alert-active bg-red'; bt.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); banner.style.display = 'block';
+                const isLocked = (Date.now() < bannerLockUntil) || banner.classList.contains('bg-purple');
+                
+                if (bannerStartTime !== 0 && elapsed < 20000 && !isLocked) {
+                    banner.className = 'alert-active bg-red'; 
+                    document.getElementById('banner-text').innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); 
+                    banner.style.display = 'block';
                     mainTitle.classList.remove('title-active');
-                } else if (elapsed >= 20000) {
+                } else if (elapsed >= 20000 || bannerStartTime === 0) {
                     mainTitle.classList.add('title-active');
                     if (banner.classList.contains('bg-red')) { banner.style.display = 'none'; banner.className = ''; }
                 }
