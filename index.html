@@ -9,42 +9,28 @@
     <style>
         :root { --safe-top: env(safe-area-inset-top, 25px); --safe-bottom: env(safe-area-inset-bottom, 30px); }
         html, body { height: 100%; margin: 0; padding: 0; background: #1a1a1a; color: white; overflow: hidden; display: flex; flex-direction: column; font-family: sans-serif; }
-        
         .proximity-orange { border: 8px solid #e67e22 !important; box-sizing: border-box; }
         .proximity-red { border: 10px solid #ff0000 !important; animation: blink-red 0.5s infinite; box-sizing: border-box; }
         @keyframes blink-red { from { opacity: 1; } to { opacity: 0.7; } }
-        
-        #main-title { 
-            width: 80%; margin: calc(var(--safe-top) + 5px) auto 10px auto; text-align: center; padding: 10px; 
-            border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; 
-            border-radius: 8px; text-transform: uppercase; flex-shrink: 0; 
-        }
-        
-        /* CLIGNOTEMENT TITRE : Se déclenche après 20s */
+        #main-title { width: 80%; margin: calc(var(--safe-top) + 5px) auto 10px auto; text-align: center; padding: 10px; border: 2px solid #e74c3c; color: #e74c3c; font-weight: bold; background: #2c2c2c; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; }
         .title-active { animation: blink-title 1.2s infinite; background: #441111 !important; border-color: #ff0000 !important; color: #ff0000 !important; }
         @keyframes blink-title { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-
         #map { flex: 1; width: 100%; background: #222; position: relative; }
         #recenter-btn { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: rgba(52, 152, 219, 0.9); color: white; border: 2px solid white; border-radius: 50%; width: 55px; height: 55px; font-size: 24px; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.6); cursor: pointer; }
-        
         .leaflet-tooltip-tactical { background: rgba(0,0,0,0.8); border: 1px solid #e74c3c; color: white; font-weight: bold; font-size: 10px; padding: 2px 4px; border-radius: 3px; text-transform: uppercase; }
-        
         #notification-banner { position: absolute; top: 140px; left: 50%; transform: translateX(-50%); width: 90%; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; z-index: 2000; display: none; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         .alert-active { display: block !important; }
-        
         .bg-red { background: #ff0000 !important; }
         .bg-purple { background: #8e44ad !important; }
         .bg-green { background: #2ecc71 !important; }
         .bg-orange { background: #e67e22 !important; }
         .bg-grey { background: #7f8c8d !important; }
-
         #ui-panel { padding: 15px 15px calc(var(--safe-bottom) + 10px) 15px; background: #2c2c2c; border-top: 2px solid #444; flex-shrink: 0; }
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         button { padding: 12px; border: none; border-radius: 4px; font-weight: bold; color: white; text-transform: uppercase; cursor: pointer; font-size: 0.7rem; }
         #btn-main { background: #e67e22; grid-column: span 2; min-height: 55px; }
         .choice-box { display: flex; gap: 5px; justify-content: center; margin-top: 12px; }
         .btn-res { padding: 10px 5px; border: 1px solid white; border-radius: 4px; font-size: 0.55rem; min-width: 31%; font-weight: bold; cursor: pointer; }
-        
         #qr-lock-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     </style>
 </head>
@@ -63,7 +49,7 @@
     <div id="map"><div id="recenter-btn">🎯</div></div>
     <div id="ui-panel">
         <input type="text" id="user-id" placeholder="NOM DE L'UNITÉ" style="width: 80%; margin: 0 auto 10px auto; display: block; padding: 10px; text-align: center; background:#444; color:white; border:none; border-radius:4px; font-weight: bold;">
-        <div class="btn-grid"><button style="background:#444" onclick="if(confirm('Nettoyer tout ?')) { firebase.database().ref().remove(); location.reload(); }">🧹 NETTOYER</button><button style="background:#8e44ad" id="btn-stopstick">🚧 STOP STICK</button><button id="btn-main">🚨 DÉMARRER PRISE EN CHARGE</button></div>
+        <div class="btn-grid"><button style="background:#444" onclick="if(confirm('Tout effacer ?')) { firebase.database().ref().remove(); location.reload(); }">🧹 NETTOYER</button><button style="background:#8e44ad" id="btn-stopstick">🚧 STOP STICK</button><button id="btn-main">🚨 DÉMARRER PRISE EN CHARGE</button></div>
     </div>
 </div>
 
@@ -73,7 +59,7 @@
 <script>
     const secretKey = "TACTICAL-UNLOCK-2026";
     let myPos = null, inAction = false, isLeader = false, currentLeader = null, leaderPos = null, markers = {}, bannerLockUntil = 0;
-    let autoCenter = true, recenterTimer = null, isMapMoving = false, bannerStartTime = 0, lastKnownLeader = null;
+    let autoCenter = true, recenterTimer = null, isMapMoving = false, bannerStartTime = 0, lastKnownLeader = null, lastKnownSSAlert = 0;
 
     function speak(t) { 
         if (window.AndroidVocal) { window.AndroidVocal.speakNative(t); } 
@@ -128,7 +114,11 @@
 
         db.ref('alerts/stopstick').on('value', (s) => {
             const d = s.val(); if(!d) return;
-            if(d.active) { setBanner("🚧 STOP STICK PAR : " + d.user, "bg-purple"); document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; }
+            if(d.active) { 
+                if(lastKnownSSAlert !== d.ts) { speak("Mise en place du stop stick par " + d.user); lastKnownSSAlert = d.ts; }
+                setBanner("🚧 STOP STICK PAR : " + d.user, "bg-purple"); 
+                document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; 
+            }
             else if(d.result) { setBanner("RÉSULTAT STOP STICK : " + d.result, (d.result === 'POSITIF' ? 'bg-green' : 'bg-red'), 10000); speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none'; }
         });
         
@@ -141,6 +131,7 @@
 
         db.ref('vehicles').on('value', (s) => {
             const data = s.val() || {}; leaderPos = null; currentLeader = null; let minD = Infinity; const mySid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_");
+            const banner = document.getElementById('notification-banner');
             if (Object.keys(data).length === 0 && (inAction || currentLeader)) { inAction = false; isLeader = false; updateUI(); }
             for(let id in data) {
                 const v = data[id]; const name = id.replace(/_/g, ' '); 
@@ -158,19 +149,19 @@
             for(let id in markers) if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
             document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
-            // LOGIQUE 20 SECONDES + BLINK TITRE
+            // --- LOGIQUE BANNIERE 20 SECONDES ---
             if (currentLeader) {
                 const elapsed = Date.now() - bannerStartTime;
-                const locked = (Date.now() < bannerLockUntil) || document.getElementById('ss-choices').style.display !== 'none' || document.getElementById('end-choices').style.display !== 'none';
-                if (elapsed < 20000 && !locked) {
-                    const b = document.getElementById('notification-banner'); const bt = document.getElementById('banner-text');
-                    b.className = 'alert-active bg-red'; bt.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); b.style.display = 'block';
+                const isPriorityAlert = (Date.now() < bannerLockUntil) || banner.classList.contains('bg-purple');
+                if (elapsed < 20000 && !isPriorityAlert) {
+                    const bt = document.getElementById('banner-text');
+                    banner.className = 'alert-active bg-red'; bt.innerText = "🚨 PRISE EN CHARGE PAR : " + currentLeader.toUpperCase(); banner.style.display = 'block';
                     mainTitle.classList.remove('title-active');
-                } else if (elapsed >= 20000 && !locked) {
-                    document.getElementById('notification-banner').style.display = 'none';
+                } else if (elapsed >= 20000) {
                     mainTitle.classList.add('title-active');
+                    if (banner.classList.contains('bg-red')) { banner.style.display = 'none'; banner.className = ''; }
                 }
-            } else { lastKnownLeader = null; bannerStartTime = 0; mainTitle.classList.remove('title-active'); if (Date.now() >= bannerLockUntil) document.getElementById('notification-banner').style.display = 'none'; }
+            } else { lastKnownLeader = null; bannerStartTime = 0; mainTitle.classList.remove('title-active'); if (Date.now() >= bannerLockUntil) banner.style.display = 'none'; }
             updateUI();
         });
     }
