@@ -121,6 +121,9 @@
         const recenterBtn = document.getElementById('recenter-btn'); 
         const nightBtn = document.getElementById('night-btn');
         const mainTitle = document.getElementById('main-title');
+        const banner = document.getElementById('notification-banner');
+        const bt = document.getElementById('banner-text');
+        const ssChoices = document.getElementById('ss-choices');
         
         const map = L.map('map', { zoomControl: false }).setView([46, 2], 16); 
         L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
@@ -143,20 +146,18 @@
 
         function sync() { if(!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if(!sid) return; db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() }); }
         
-        // Sécurisation Nettoyage
         const cleanBtn = document.getElementById('btn-clean');
         const startClean = () => { cleanBtn.classList.add('holding'); cleanTimeout = setTimeout(() => { if(confirm('NETTOYAGE TOTAL ?')) { db.ref().remove(); location.reload(); } cleanBtn.classList.remove('holding'); }, 3000); };
         const stopClean = () => { clearTimeout(cleanTimeout); cleanBtn.classList.remove('holding'); };
         cleanBtn.addEventListener('mousedown', startClean); cleanBtn.addEventListener('touchstart', startClean);
         cleanBtn.addEventListener('mouseup', stopClean); cleanBtn.addEventListener('touchend', stopClean);
 
-        // Bouton Principal (Action / Fin de mission universelle)
         document.getElementById('btn-main').onclick = () => {
             if(inAction) { 
                 bannerStartTime = 0; 
                 setBanner("SÉLECTIONNER RÉSULTAT FINAL", "bg-red"); 
                 document.getElementById('end-choices').style.display='flex'; 
-                document.getElementById('ss-choices').style.display='none'; 
+                ssChoices.style.display='none'; 
                 return; 
             }
             inAction = true; isLeader = (currentLeader === null); updateUI(); sync();
@@ -165,7 +166,6 @@
         document.getElementById('btn-stopstick').onclick = () => db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true });
         window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); };
         
-        // Fin de mission (Nettoyage GLOBAL)
         window.endInter = (r) => { 
             const u = idInput.value.toUpperCase() || "INCONNUE";
             db.ref('alerts/end').set({ result: r, user: u, ts: Date.now() }); 
@@ -181,15 +181,26 @@
             else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } 
         }
 
+        // --- CORRECTION : AFFICHAGE UNIVERSEL ET PERSISTANT STOP STICK ---
         db.ref('alerts/stopstick').on('value', (s) => {
-            const d = s.val(); if(!d) return;
+            const d = s.val(); 
+            if(!d) {
+                if (Date.now() >= bannerLockUntil && banner.classList.contains('bg-purple')) {
+                    banner.style.display = 'none';
+                    ssChoices.style.display = 'none';
+                }
+                return;
+            }
             if(d.active) { 
-                if(lastKnownSSAlert !== d.ts) { speak("Stop stick par " + d.user); lastKnownSSAlert = d.ts; }
-                setBanner("🚧 STOP STICK PAR : " + d.user, "bg-purple"); 
-                document.getElementById('ss-choices').style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; 
+                if(lastKnownSSAlert !== d.ts) { speak("Attention : Stop stick par " + d.user); lastKnownSSAlert = d.ts; }
+                banner.className = 'alert-active bg-purple'; 
+                bt.innerText = "🚧 STOP STICK PAR : " + d.user;
+                banner.style.display = 'block';
+                ssChoices.style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; 
+                bannerLockUntil = Date.now() + 2000; 
             } else if(d.result) { 
                 setBanner("RÉSULTAT STOP STICK : " + d.result, (d.result === 'POSITIF' ? 'bg-green' : 'bg-red'), 10000); 
-                speak("Stop stick " + d.result); document.getElementById('ss-choices').style.display = 'none'; 
+                speak("Résultat du stop stick : " + d.result); ssChoices.style.display = 'none'; 
             }
         });
         
@@ -220,8 +231,7 @@
             for(let id in markers) if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
             document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
-            const b = document.getElementById('notification-banner');
-            if (document.getElementById('end-choices').style.display !== 'none' || document.getElementById('ss-choices').style.display !== 'none') return;
+            if (document.getElementById('end-choices').style.display !== 'none' || ssChoices.style.display !== 'none' || banner.classList.contains('bg-purple')) return;
             if (currentLeader) {
                 const elapsed = now - bannerStartTime;
                 if (bannerStartTime !== 0 && elapsed < 20000 && now >= bannerLockUntil) {
@@ -229,9 +239,9 @@
                     mainTitle.classList.remove('title-active');
                 } else if (elapsed >= 20000 || bannerStartTime === 0) {
                     mainTitle.classList.add('title-active');
-                    if (b.classList.contains('bg-red')) { b.style.display = 'none'; b.className = ''; }
+                    if (banner.classList.contains('bg-red')) { banner.style.display = 'none'; banner.className = ''; }
                 }
-            } else { lastKnownLeader = null; bannerStartTime = 0; mainTitle.classList.remove('title-active'); if (now >= bannerLockUntil) b.style.display = 'none'; }
+            } else { lastKnownLeader = null; bannerStartTime = 0; mainTitle.classList.remove('title-active'); if (now >= bannerLockUntil) banner.style.display = 'none'; }
             updateUI();
         });
     }
