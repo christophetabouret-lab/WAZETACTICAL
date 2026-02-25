@@ -146,6 +146,7 @@
 
         function sync() { if(!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if(!sid) return; db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() }); }
         
+        // Sécurisation du bouton nettoyer (Appui long 3s)
         const cleanBtn = document.getElementById('btn-clean');
         const startClean = () => { cleanBtn.classList.add('holding'); cleanTimeout = setTimeout(() => { if(confirm('NETTOYAGE TOTAL ?')) { db.ref().remove(); location.reload(); } cleanBtn.classList.remove('holding'); }, 3000); };
         const stopClean = () => { clearTimeout(cleanTimeout); cleanBtn.classList.remove('holding'); };
@@ -164,7 +165,11 @@
         };
 
         document.getElementById('btn-stopstick').onclick = () => db.ref('alerts/stopstick').set({ user: idInput.value.toUpperCase(), ts: Date.now(), active: true });
-        window.submitSS = (r) => { db.ref('alerts/stopstick').update({ result: r, active: false }); setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); };
+        
+        window.submitSS = (r) => { 
+            db.ref('alerts/stopstick').update({ result: r, active: false }); 
+            setTimeout(() => { db.ref('alerts/stopstick').remove(); }, 10000); 
+        };
         
         window.endInter = (r) => { 
             const u = idInput.value.toUpperCase() || "INCONNUE";
@@ -181,26 +186,34 @@
             else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } 
         }
 
-        // --- CORRECTION : AFFICHAGE UNIVERSEL ET PERSISTANT STOP STICK ---
+        // --- GESTION DU STOP STICK CORRIGÉE ---
         db.ref('alerts/stopstick').on('value', (s) => {
             const d = s.val(); 
-            if(!d) {
-                if (Date.now() >= bannerLockUntil && banner.classList.contains('bg-purple')) {
-                    banner.style.display = 'none';
-                    ssChoices.style.display = 'none';
-                }
-                return;
+
+            // 1. Priorité absolue : Afficher le résultat (Même si l'alerte active vient de disparaître)
+            if(d && d.result) { 
+                const colorClass = (d.result === 'POSITIF' ? 'bg-green' : 'bg-red');
+                setBanner("RÉSULTAT STOP STICK : " + d.result, colorClass, 10000); 
+                speak("Résultat du stop stick : " + d.result); 
+                ssChoices.style.display = 'none'; 
+                return; 
             }
-            if(d.active) { 
+
+            // 2. Alerte en cours de pose
+            if(d && d.active) { 
                 if(lastKnownSSAlert !== d.ts) { speak("Attention : Stop stick par " + d.user); lastKnownSSAlert = d.ts; }
                 banner.className = 'alert-active bg-purple'; 
                 bt.innerText = "🚧 STOP STICK PAR : " + d.user;
                 banner.style.display = 'block';
                 ssChoices.style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; 
                 bannerLockUntil = Date.now() + 2000; 
-            } else if(d.result) { 
-                setBanner("RÉSULTAT STOP STICK : " + d.result, (d.result === 'POSITIF' ? 'bg-green' : 'bg-red'), 10000); 
-                speak("Résultat du stop stick : " + d.result); ssChoices.style.display = 'none'; 
+            } 
+            // 3. Plus d'alerte et plus de résultat (Nettoyage de l'écran)
+            else if (!d || (!d.active && !d.result)) {
+                if (Date.now() >= bannerLockUntil && banner.classList.contains('bg-purple')) {
+                    banner.style.display = 'none';
+                    ssChoices.style.display = 'none';
+                }
             }
         });
         
@@ -231,7 +244,9 @@
             for(let id in markers) if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
             document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
+            // Sécurité pour ne pas écraser les notifications importantes en cours (Stop Stick / Choix)
             if (document.getElementById('end-choices').style.display !== 'none' || ssChoices.style.display !== 'none' || banner.classList.contains('bg-purple')) return;
+            
             if (currentLeader) {
                 const elapsed = now - bannerStartTime;
                 if (bannerStartTime !== 0 && elapsed < 20000 && now >= bannerLockUntil) {
@@ -239,9 +254,14 @@
                     mainTitle.classList.remove('title-active');
                 } else if (elapsed >= 20000 || bannerStartTime === 0) {
                     mainTitle.classList.add('title-active');
-                    if (banner.classList.contains('bg-red')) { banner.style.display = 'none'; banner.className = ''; }
+                    if (banner.classList.contains('bg-red') && now >= bannerLockUntil) { 
+                        banner.style.display = 'none'; banner.className = ''; 
+                    }
                 }
-            } else { lastKnownLeader = null; bannerStartTime = 0; mainTitle.classList.remove('title-active'); if (now >= bannerLockUntil) banner.style.display = 'none'; }
+            } else { 
+                lastKnownLeader = null; bannerStartTime = 0; mainTitle.classList.remove('title-active'); 
+                if (now >= bannerLockUntil) banner.style.display = 'none'; 
+            }
             updateUI();
         });
     }
