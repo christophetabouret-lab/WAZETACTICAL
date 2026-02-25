@@ -60,7 +60,7 @@
         <div id="banner-text"></div>
         <div id="ss-choices" class="choice-box" style="display:none;">
             <div class="btn-res" style="background:#2ecc71" onclick="submitSS('POSITIF')">POSITIF</div>
-            <div class="btn-res" style="background:#e74c3c" onclick="submitSS('NÉGATIF')">NÉGATIF</div>
+            <div class="btn-res" style="background:#e67e22" onclick="submitSS('NÉGATIF')">NÉGATIF</div>
         </div>
         <div id="end-choices" class="choice-box" style="display:none;">
             <div class="btn-res" style="background:#27ae60" onclick="endInter('INTERPELLATION')">INTERP.</div>
@@ -102,15 +102,24 @@
     if (localStorage.getItem('tactical_authorized') === 'true') { unlock(); }
     else { const html5QrCode = new Html5Qrcode("reader"); setTimeout(() => { html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => { if(txt.trim() === secretKey) { html5QrCode.stop().then(unlock); } }); }, 1500); }
 
+    // CORRECTION : Verrouillage strict des bannières basé sur un ID unique de timer
     function setBanner(txt, cl, lockMs = 0) {
         const now = Date.now();
         if (now < bannerLockUntil && lockMs === 0) return; 
         const b = document.getElementById('notification-banner');
         const bt = document.getElementById('banner-text');
         b.className = 'alert-active ' + cl; bt.innerText = txt; b.style.display = 'block';
+        
         if (lockMs > 0) {
-            bannerLockUntil = now + lockMs;
-            setTimeout(() => { if (Date.now() >= bannerLockUntil) { b.style.display = 'none'; b.className = ''; } }, lockMs);
+            const myLock = now + lockMs;
+            bannerLockUntil = myLock;
+            setTimeout(() => { 
+                // Vérifie si la bannière n'a pas été remplacée par une autre plus récente
+                if (bannerLockUntil === myLock) { 
+                    b.style.display = 'none'; 
+                    b.className = ''; 
+                } 
+            }, lockMs);
         }
     }
 
@@ -146,7 +155,6 @@
 
         function sync() { if(!myPos) return; const sid = idInput.value.trim().replace(/[^a-zA-Z0-9]/g, "_"); if(!sid) return; db.ref('vehicles/'+sid).set({ lat: myPos.lat, lon: myPos.lon, active: isLeader, isMission: true, ts: Date.now() }); }
         
-        // Sécurisation du bouton nettoyer (Appui long 3s)
         const cleanBtn = document.getElementById('btn-clean');
         const startClean = () => { cleanBtn.classList.add('holding'); cleanTimeout = setTimeout(() => { if(confirm('NETTOYAGE TOTAL ?')) { db.ref().remove(); location.reload(); } cleanBtn.classList.remove('holding'); }, 3000); };
         const stopClean = () => { clearTimeout(cleanTimeout); cleanBtn.classList.remove('holding'); };
@@ -186,20 +194,18 @@
             else { btn.innerText = currentLeader ? "📡 REJOINDRE LA PRISE EN CHARGE" : "🚨 DÉMARRER PRISE EN CHARGE"; btn.style.background = "#e67e22"; } 
         }
 
-        // --- GESTION DU STOP STICK CORRIGÉE ---
         db.ref('alerts/stopstick').on('value', (s) => {
             const d = s.val(); 
 
-            // 1. Priorité absolue : Afficher le résultat (Même si l'alerte active vient de disparaître)
             if(d && d.result) { 
-                const colorClass = (d.result === 'POSITIF' ? 'bg-green' : 'bg-red');
+                // CORRECTION : Le négatif passe en orange pour ne plus être écrasé par la boucle rouge
+                const colorClass = (d.result === 'POSITIF' ? 'bg-green' : 'bg-orange');
                 setBanner("RÉSULTAT STOP STICK : " + d.result, colorClass, 10000); 
                 speak("Résultat du stop stick : " + d.result); 
                 ssChoices.style.display = 'none'; 
                 return; 
             }
 
-            // 2. Alerte en cours de pose
             if(d && d.active) { 
                 if(lastKnownSSAlert !== d.ts) { speak("Attention : Stop stick par " + d.user); lastKnownSSAlert = d.ts; }
                 banner.className = 'alert-active bg-purple'; 
@@ -208,7 +214,6 @@
                 ssChoices.style.display = (d.user === idInput.value.toUpperCase()) ? 'flex' : 'none'; 
                 bannerLockUntil = Date.now() + 2000; 
             } 
-            // 3. Plus d'alerte et plus de résultat (Nettoyage de l'écran)
             else if (!d || (!d.active && !d.result)) {
                 if (Date.now() >= bannerLockUntil && banner.classList.contains('bg-purple')) {
                     banner.style.display = 'none';
@@ -244,8 +249,8 @@
             for(let id in markers) if(!data[id]) { map.removeLayer(markers[id]); delete markers[id]; }
             document.getElementById('app-body').className = (minD < 200) ? 'proximity-red' : (minD < 500 ? 'proximity-orange' : '');
             
-            // Sécurité pour ne pas écraser les notifications importantes en cours (Stop Stick / Choix)
-            if (document.getElementById('end-choices').style.display !== 'none' || ssChoices.style.display !== 'none' || banner.classList.contains('bg-purple')) return;
+            // CORRECTION : Blocage absolu de la boucle véhicule si une bannière avec délai est affichée
+            if (document.getElementById('end-choices').style.display !== 'none' || ssChoices.style.display !== 'none' || now < bannerLockUntil) return;
             
             if (currentLeader) {
                 const elapsed = now - bannerStartTime;
